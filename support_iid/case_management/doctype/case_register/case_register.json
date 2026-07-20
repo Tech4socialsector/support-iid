@@ -1,0 +1,440 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "autoname": "SIID-.#######",
+ "creation": "2026-07-17 23:19:17.680202",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "basic_information_section",
+  "requestor_email",
+  "primary_spoc_mobile_number",
+  "primary_spoc_name",
+  "type_of_request",
+  "column_break_fbnu",
+  "case_status",
+  "request_date",
+  "source_of_request",
+  "beneficiary_information_section",
+  "beneficiary_name",
+  "age",
+  "mobile_number",
+  "qualification",
+  "marital_status",
+  "primary_contact_person",
+  "address_line_1",
+  "district",
+  "column_break_cspa",
+  "date_of_birth",
+  "gender",
+  "email",
+  "employment_status",
+  "primary_contact_mobile",
+  "pincode",
+  "state",
+  "section_break_ejlu",
+  "note_about_the_individual",
+  "family_members_details_section",
+  "family_members",
+  "request_details_section",
+  "hospital_institution_name",
+  "hospital_institution_location",
+  "ailment__course_details",
+  "column_break_eybn",
+  "treatment",
+  "funds_requested",
+  "amount_already_spent",
+  "financial_information_insurance_section",
+  "annual_family_income",
+  "residence_type",
+  "existing_debt",
+  "residence_details",
+  "column_break_lssp",
+  "insurance_type",
+  "insurance_coverage_details",
+  "verification_section",
+  "physical_verification",
+  "physical_verification_notes",
+  "genuineness_assessment",
+  "column_break_dhaq",
+  "vulnerability_assessment",
+  "milaap_campaign_link",
+  "milaap_recommendation",
+  "case_documents_section",
+  "supporting_documents",
+  "case_approval_log_section",
+  "show_activity_details",
+  "case_approval_log"
+ ],
+ "fields": [
+  {
+   "fieldname": "basic_information_section",
+   "fieldtype": "Section Break",
+   "label": "Basic Information"
+  },
+  {
+   "fieldname": "case_status",
+   "fieldtype": "Data",
+   "label": "Case Status"
+  },
+  {
+   "fieldname": "type_of_request",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Type of Request",
+   "options": "Type of Request List",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_fbnu",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "request_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Request Date",
+   "reqd": 1
+  },
+  {
+   "fieldname": "source_of_request",
+   "fieldtype": "Date",
+   "label": "Source of Request",
+   "options": "\n\nField State\nPhilanthropy member\nHealth operations\nReferred by partner\nEmail\nLetter",
+   "reqd": 1
+  },
+  {
+   "fieldname": "beneficiary_information_section",
+   "fieldtype": "Section Break",
+   "label": "Beneficiary Information"
+  },
+  {
+   "fieldname": "beneficiary_name",
+   "fieldtype": "Data",
+   "label": "Beneficiary Name (as per Aadhar)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "age",
+   "fieldtype": "Int",
+   "label": "Age"
+  },
+  {
+   "fieldname": "mobile_number",
+   "fieldtype": "Data",
+   "label": "Mobile Number (as per Aadhar)",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "qualification",
+   "fieldtype": "Select",
+   "label": "Qualification",
+   "options": "\n10th\n12th\nGraduation\nPost Graduation"
+  },
+  {
+   "fieldname": "primary_contact_person",
+   "fieldtype": "Data",
+   "label": "Primary Contact Person",
+   "options": "Name"
+  },
+  {
+   "fieldname": "column_break_cspa",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "date_of_birth",
+   "fieldtype": "Date",
+   "label": "Date of Birth (as per Aadhar)",
+   "reqd": 1
+  },
+  {
+   "fieldname": "gender",
+   "fieldtype": "Select",
+   "label": "Gender",
+   "options": "\nMale\nFemale\nothers",
+   "reqd": 1
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "label": "Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "employment_status",
+   "fieldtype": "Select",
+   "label": "Employment Status",
+   "options": "\nEmployed\nUnemployed\nRetired",
+   "reqd": 1
+  },
+  {
+   "fieldname": "primary_contact_mobile",
+   "fieldtype": "Data",
+   "label": "Primary Contact Mobile",
+   "options": "Phone"
+  },
+  {
+   "fieldname": "address_line_1",
+   "fieldtype": "Data",
+   "label": "Address Line 1",
+   "reqd": 1
+  },
+  {
+   "fieldname": "district",
+   "fieldtype": "Data",
+   "label": "District",
+   "reqd": 1
+  },
+  {
+   "fieldname": "pincode",
+   "fieldtype": "Int",
+   "label": "Pincode",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Data",
+   "label": "State",
+   "reqd": 1
+  },
+  {
+   "fieldname": "request_details_section",
+   "fieldtype": "Section Break",
+   "label": "Request Details"
+  },
+  {
+   "fieldname": "hospital_institution_name",
+   "fieldtype": "Data",
+   "label": "Hospital / Institution Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_eybn",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "hospital_institution_location",
+   "fieldtype": "Data",
+   "label": "Hospital / Institution Location",
+   "reqd": 1
+  },
+  {
+   "fieldname": "ailment__course_details",
+   "fieldtype": "Small Text",
+   "label": "Ailment / Course Details"
+  },
+  {
+   "fieldname": "treatment",
+   "fieldtype": "Data",
+   "label": "Treatment"
+  },
+  {
+   "fieldname": "funds_requested",
+   "fieldtype": "Currency",
+   "label": "Funds Requested",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "amount_already_spent",
+   "fieldtype": "Currency",
+   "label": "Amount Already Spent",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "financial_information_insurance_section",
+   "fieldtype": "Section Break",
+   "label": "Financial Information & Insurance"
+  },
+  {
+   "fieldname": "annual_family_income",
+   "fieldtype": "Currency",
+   "label": "Annual Family Income"
+  },
+  {
+   "fieldname": "existing_debt",
+   "fieldtype": "Small Text",
+   "label": "Existing Debt (For Ex: Rs 4000 is paid for House loan)"
+  },
+  {
+   "fieldname": "residence_type",
+   "fieldtype": "Select",
+   "label": "Residence Type",
+   "options": "\nOwn\nRent"
+  },
+  {
+   "fieldname": "residence_details",
+   "fieldtype": "Small Text",
+   "label": "Residence Details (For Ex: 1BHK/2BHK/3BHK)"
+  },
+  {
+   "fieldname": "column_break_lssp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "insurance_type",
+   "fieldtype": "Select",
+   "label": "Insurance Nmae",
+   "options": "\nPMJAY\nPrivate Insurance\nCompany Insurance\nState Insurance\nNo Insurance"
+  },
+  {
+   "description": "Describe the insurance coverage available (scheme, policy, benefits, and coverage amount) and explain why further financial assistance is needed.",
+   "fieldname": "insurance_coverage_details",
+   "fieldtype": "Small Text",
+   "label": "Insurance Coverage Details"
+  },
+  {
+   "fieldname": "verification_section",
+   "fieldtype": "Section Break",
+   "label": "Verification"
+  },
+  {
+   "fieldname": "physical_verification",
+   "fieldtype": "Select",
+   "label": "Physical Verification",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "physical_verification_notes",
+   "fieldtype": "Small Text",
+   "label": "Physical Verification Notes",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "genuineness_assessment",
+   "fieldtype": "Small Text",
+   "label": "Genuineness Assessment",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "column_break_dhaq",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "vulnerability_assessment",
+   "fieldtype": "Small Text",
+   "label": "Vulnerability Assessment",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "milaap_campaign_link",
+   "fieldtype": "Data",
+   "label": "Milaap campaign link"
+  },
+  {
+   "fieldname": "milaap_recommendation",
+   "fieldtype": "Small Text",
+   "label": "Milaap recommendation",
+   "options": "\nYes\nNo"
+  },
+  {
+   "fieldname": "case_documents_section",
+   "fieldtype": "Section Break",
+   "label": "Case Documents"
+  },
+  {
+   "fieldname": "supporting_documents",
+   "fieldtype": "Table",
+   "label": "Supporting documents",
+   "options": "Case Documents"
+  },
+  {
+   "fieldname": "requestor_email",
+   "fieldtype": "Data",
+   "label": "Requestor Email",
+   "options": "Email"
+  },
+  {
+   "fieldname": "primary_spoc_mobile_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Primary SPOC's Mobile number ",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "primary_spoc_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Primary SPOC's Name",
+   "options": "Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "family_members_details_section",
+   "fieldtype": "Section Break",
+   "label": "Family Members Details"
+  },
+  {
+   "fieldname": "family_members",
+   "fieldtype": "Table",
+   "label": "Family Members",
+   "options": "Family Member"
+  },
+  {
+   "fieldname": "case_approval_log_section",
+   "fieldtype": "Section Break",
+   "label": "Case Approval Log"
+  },
+  {
+   "default": "0",
+   "fieldname": "show_activity_details",
+   "fieldtype": "Check",
+   "label": "Show activity details"
+  },
+  {
+   "fieldname": "case_approval_log",
+   "fieldtype": "Table",
+   "label": "Case Approval Log",
+   "options": "Case Approval Log"
+  },
+  {
+   "fieldname": "marital_status",
+   "fieldtype": "Select",
+   "label": "Marital Status",
+   "reqd": 1
+  },
+  {
+   "fieldname": "note_about_the_individual",
+   "fieldtype": "Small Text",
+   "label": "Note about the individual",
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_ejlu",
+   "fieldtype": "Section Break"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-18 12:29:21.536256",
+ "modified_by": "Administrator",
+ "module": "Case Management",
+ "name": "Case Register",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}
