@@ -11,10 +11,12 @@
   "primary_spoc_mobile_number",
   "primary_spoc_name",
   "type_of_request",
+  "work_location",
   "column_break_fbnu",
   "case_status",
   "request_date",
   "source_of_request",
+  "department",
   "beneficiary_information_section",
   "beneficiary_name",
   "age",
@@ -410,12 +412,23 @@
    "fieldtype": "Table",
    "label": "Case Approval Stage",
    "options": "Case Approval Stage"
+  },
+  {
+   "fieldname": "department",
+   "fieldtype": "Data",
+   "label": "Department",
+   "reqd": 1
+  },
+  {
+   "fieldname": "work_location",
+   "fieldtype": "Data",
+   "label": "Work location"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-20 17:52:39.257956",
+ "modified": "2026-07-21 15:17:42.781497",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Register",
