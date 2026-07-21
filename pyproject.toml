@@ -4,7 +4,7 @@ authors = [
     { name = "Tech For Social Sector", email = "tech4socialsector@azimpremjifoundation.org"}
 ]
 description = "Support IID is a grant and support management application developed for the Azim Premji Foundation. It enables teams to track grant requests, beneficiary support, approvals, disbursements, case progress, and related documentation for education and healthcare initiatives. The application provides end-to-end visibility into support programs, helping ensure transparent, efficient, and accountable management of grants and assistance."
-requires-python = ">=3.10,<3.13"
+requires-python = ">=3.14"
 readme = "README.md"
 dynamic = ["version"]
 dependencies = [
