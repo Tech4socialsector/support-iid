@@ -1,0 +1,37 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "creation": "2026-07-20 10:58:36.989978",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "type_of_request"
+ ],
+ "fields": [
+  {
+   "fieldname": "type_of_request",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Type of Request",
+   "options": "Type of Request List",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "istable": 1,
+ "links": [],
+ "modified": "2026-07-20 10:59:03.759618",
+ "modified_by": "Administrator",
+ "module": "Case Management",
+ "name": "Type of Request group",
+ "owner": "Administrator",
+ "permissions": [],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

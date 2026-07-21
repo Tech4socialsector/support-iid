@@ -1,0 +1,19 @@
+{
+ "content": null,
+ "creation": "2026-07-20 18:02:54.093467",
+ "docstatus": 0,
+ "doctype": "Page",
+ "idx": 0,
+ "modified": "2026-07-20 18:02:54.093467",
+ "modified_by": "Administrator",
+ "module": "Case Management",
+ "name": "case-registry",
+ "owner": "Administrator",
+ "page_name": "case-registry",
+ "roles": [],
+ "script": null,
+ "standard": "Yes",
+ "style": null,
+ "system_page": 0,
+ "title": "Case Registry"
+}

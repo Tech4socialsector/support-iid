@@ -25,9 +25,10 @@
   },
   {
    "fieldname": "relationship",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Relationship",
+   "options": "Family Member Relationship",
    "reqd": 1
   },
   {
@@ -38,9 +39,10 @@
   },
   {
    "fieldname": "qualification",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Qualification"
+   "label": "Qualification",
+   "options": "Qualification"
   },
   {
    "fieldname": "column_break_pbyf",
@@ -77,7 +79,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-18 02:50:48.371745",
+ "modified": "2026-07-20 09:54:58.552200",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Family Member",

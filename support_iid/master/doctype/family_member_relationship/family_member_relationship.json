@@ -3,27 +3,25 @@
  "allow_bulk_edit": 1,
  "allow_rename": 1,
  "autoname": "prompt",
- "creation": "2026-07-18 13:32:11.925137",
+ "creation": "2026-07-20 09:52:25.234760",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "type_of_request_list"
+  "section_break_adbt"
  ],
  "fields": [
   {
-   "fieldname": "type_of_request_list",
-   "fieldtype": "Table",
-   "label": "Type of Request List",
-   "options": "Type of Request group"
+   "fieldname": "section_break_adbt",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-20 15:21:34.938815",
+ "modified": "2026-07-20 09:52:37.874199",
  "modified_by": "Administrator",
  "module": "Master",
- "name": "Documents list",
+ "name": "Family Member Relationship",
  "naming_rule": "Set by user",
  "owner": "Administrator",
  "permissions": [

@@ -63,6 +63,7 @@
   "case_documents_section",
   "supporting_documents",
   "case_approval_log_section",
+  "case_approval_stage",
   "show_activity_details",
   "case_approval_log"
  ],
@@ -98,9 +99,9 @@
   },
   {
    "fieldname": "source_of_request",
-   "fieldtype": "Date",
+   "fieldtype": "Select",
    "label": "Source of Request",
-   "options": "\n\nField State\nPhilanthropy member\nHealth operations\nReferred by partner\nEmail\nLetter",
+   "options": "\nField State\nPhilanthropy member\nHealth operations\nReferred by partner\nEmail\nLetter",
    "reqd": 1
   },
   {
@@ -128,9 +129,9 @@
   },
   {
    "fieldname": "qualification",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "label": "Qualification",
-   "options": "\n10th\n12th\nGraduation\nPost Graduation"
+   "options": "Qualification"
   },
   {
    "fieldname": "primary_contact_person",
@@ -295,19 +296,17 @@
    "fieldname": "physical_verification",
    "fieldtype": "Select",
    "label": "Physical Verification",
-   "options": "\nYes\nNo"
+   "options": "Yes\nNo"
   },
   {
    "fieldname": "physical_verification_notes",
    "fieldtype": "Small Text",
-   "label": "Physical Verification Notes",
-   "options": "\nYes\nNo"
+   "label": "Physical Verification Notes"
   },
   {
    "fieldname": "genuineness_assessment",
    "fieldtype": "Small Text",
-   "label": "Genuineness Assessment",
-   "options": "\nYes\nNo"
+   "label": "Genuineness Assessment"
   },
   {
    "fieldname": "column_break_dhaq",
@@ -316,8 +315,7 @@
   {
    "fieldname": "vulnerability_assessment",
    "fieldtype": "Small Text",
-   "label": "Vulnerability Assessment",
-   "options": "\nYes\nNo"
+   "label": "Vulnerability Assessment"
   },
   {
    "fieldname": "milaap_campaign_link",
@@ -327,8 +325,7 @@
   {
    "fieldname": "milaap_recommendation",
    "fieldtype": "Small Text",
-   "label": "Milaap recommendation",
-   "options": "\nYes\nNo"
+   "label": "Milaap recommendation"
   },
   {
    "fieldname": "case_documents_section",
@@ -386,6 +383,7 @@
    "label": "Show activity details"
   },
   {
+   "depends_on": "eval:doc.show_activity_details==1;",
    "fieldname": "case_approval_log",
    "fieldtype": "Table",
    "label": "Case Approval Log",
@@ -406,12 +404,18 @@
   {
    "fieldname": "section_break_ejlu",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "case_approval_stage",
+   "fieldtype": "Table",
+   "label": "Case Approval Stage",
+   "options": "Case Approval Stage"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-18 12:29:21.536256",
+ "modified": "2026-07-20 17:52:39.257956",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Register",
