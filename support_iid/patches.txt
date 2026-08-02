@@ -8,3 +8,4 @@ support_iid.patches.rename_push_back_to_send_back
 support_iid.patches.split_case_status_and_level
 support_iid.patches.create_support_iid_approver_role
 support_iid.patches.create_support_iid_settings
+support_iid.patches.set_default_workspace_to_case_management

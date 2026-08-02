@@ -665,6 +665,17 @@ class CaseListView {
 	}
 
 	get_current_stage(doc) {
+		// Only "Pending Approval" cases have a stage genuinely awaiting
+		// action. Any other case_status (Sent Back, Rejected, Approved,
+		// On Hold, Closed) means no approver should see a Take Action
+		// button — even though a LATER stage's own row may still carry a
+		// blank status simply because it was never reached yet (e.g.
+		// stage 3 when the case was sent back at stage 1). Without this
+		// check, scanning stage rows alone would incorrectly treat that
+		// untouched later stage as "current" and show Take Action on a
+		// case that isn't actually awaiting any approver right now.
+		if (doc.case_status !== 'Pending Approval') return null;
+
 		var stages = doc.case_approval_stage || [];
 		for (var i = 0; i < stages.length; i++) {
 			var s = (stages[i].case_approval_status || '').trim();

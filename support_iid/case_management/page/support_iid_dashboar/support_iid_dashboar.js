@@ -86,6 +86,17 @@ function icon(name, size) {
 }
 
 function get_current_stage(doc) {
+	// Only "Pending Approval" cases have a stage genuinely awaiting
+	// action. Any other case_status (Sent Back, Rejected, Approved, On
+	// Hold, Closed) means no approver should see a Take Action button —
+	// even though a LATER stage's own row may still carry a blank status
+	// simply because it was never reached yet (e.g. stage 3 when the
+	// case was sent back at stage 1). Without this check, scanning stage
+	// rows alone would incorrectly treat that untouched later stage as
+	// "current" and show Take Action on a case that isn't actually
+	// awaiting any approver right now.
+	if (doc.case_status !== 'Pending Approval') return null;
+
 	var stages = doc.case_approval_stage || [];
 	for (var i = 0; i < stages.length; i++) {
 		var s = (stages[i].case_approval_status || '').trim();
@@ -274,11 +285,11 @@ class SupportIIDDashboard {
 			   (a 2-line label like "Sent Back for Revision" + a value +
 			   a sub line) — content is never clipped, just given a
 			   consistent floor so shorter cards don't look tiny next to it. */
-			.sd-metrics-grid { display:grid; grid-template-columns:repeat(auto-fill, 168px); gap:10px; align-items:stretch; }
+			.sd-metrics-grid { display:grid; grid-template-columns:repeat(auto-fill, 208px); gap:14px; align-items:stretch; }
 			.sd-metric-card {
-				background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:8px;
-				padding:12px 13px; cursor:pointer; transition:box-shadow .12s, transform .12s;
-				width:168px; max-width:100%; min-height:128px; display:flex; flex-direction:column;
+				background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px;
+				padding:16px 18px; cursor:pointer; transition:box-shadow .12s, transform .12s;
+				width:208px; max-width:100%; min-height:156px; display:flex; flex-direction:column;
 			}
 			.sd-metric-card:hover { box-shadow:0 3px 10px rgba(0,0,0,.07); transform:translateY(-1px); }
 			.sd-metric-card.sd-disabled { cursor:default; opacity:.65; }
@@ -334,12 +345,12 @@ class SupportIIDDashboard {
 				display:inline-flex; align-items:center; box-shadow:none !important;
 			}
 			.sd-metric-icon {
-				width:22px; height:22px; border-radius:6px; background:#f0f1f3; color:#5a6068;
-				display:flex; align-items:center; justify-content:center; font-size:12px; margin-bottom:7px;
+				width:28px; height:28px; border-radius:7px; background:#f0f1f3; color:#5a6068;
+				display:flex; align-items:center; justify-content:center; font-size:14px; margin-bottom:9px;
 			}
-			.sd-metric-label { font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:5px; }
-			.sd-metric-value { font-size:21px; font-weight:700; color:#1a1a1a; line-height:1.2; }
-			.sd-metric-sub { font-size:12px; color:var(--text-muted,#8d99a6); margin-top:4px; }
+			.sd-metric-label { font-size:12.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:6px; }
+			.sd-metric-value { font-size:26px; font-weight:700; color:#1a1a1a; line-height:1.2; }
+			.sd-metric-sub { font-size:13px; color:var(--text-muted,#8d99a6); margin-top:5px; }
 
 			.sd-chart-panel { background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px; padding:20px 22px; }
 			.sd-chart-title { font-size:13px; font-weight:700; margin-bottom:16px; color:#1a1a1a; }
@@ -734,13 +745,6 @@ class SupportIIDDashboard {
 		});
 		var category_summary = Object.keys(by_category).map((k) => k + ': ' + format_currency(by_category[k])).join(' · ') || 'No approved cases yet';
 
-		var status_counts = {};
-		rows.forEach((c) => {
-			var k = c.case_status || 'Unknown';
-			status_counts[k] = (status_counts[k] || 0) + 1;
-		});
-		var status_summary = Object.keys(status_counts).map((k) => k + ': ' + status_counts[k]).join(' · ') || 'No cases yet';
-
 		// Average days from request to approval, across approved cases with
 		// both dates on record (sample/legacy rows may be missing one).
 		var processing_days = approved_rows
@@ -771,12 +775,12 @@ class SupportIIDDashboard {
 				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
 			},
 			{
-				icon: icon('barChart', 16), label: 'Total Funds Requested (Pipeline)', value: format_currency(total_requested_value),
+				icon: icon('barChart', 18), label: 'Total Funds Requested (Pipeline)', value: format_currency(total_requested_value),
 				sub: rows.length + ' total case(s)',
 				click: () => self.open_drilldown('All cases', () => true)
 			},
 			{
-				icon: icon('tag', 16), label: 'Approval Amount by Category',
+				icon: icon('tag', 18), label: 'Approval Amount by Category',
 				value: format_currency(total_approved_value),
 				subHtml: Object.keys(by_category).length
 					? Object.keys(by_category).map((k) => `<span style="display:block;font-size:11.5px;color:#5a6068"><b>${frappe.utils.escape_html(k)}:</b> ${format_currency(by_category[k])}</span>`).join('')
@@ -787,19 +791,19 @@ class SupportIIDDashboard {
 
 		var insight_cards = [
 			{
-				icon: icon('clock', 16), label: 'Avg. Time to Approval',
+				icon: icon('clock', 18), label: 'Avg. Time to Approval',
 				value: avg_processing_days !== null ? avg_processing_days + ' day' + (avg_processing_days === 1 ? '' : 's') : '—',
 				sub: processing_days.length ? 'across ' + processing_days.length + ' approved case(s)' : 'no approved cases with both dates yet',
 				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
 			},
 			{
-				icon: icon('checkCircle', 16), label: 'Approval Rate',
+				icon: icon('checkCircle', 18), label: 'Approval Rate',
 				value: approval_rate !== null ? approval_rate + '%' : '—',
 				sub: decided_count ? approved_rows.length + ' approved / ' + decided_count + ' decided' : 'no decided cases yet',
 				click: () => self.open_drilldown('Decided cases', (c) => c.case_status === 'Approved' || c.case_status === 'Rejected')
 			},
 			{
-				icon: icon('tag', 16), label: 'Requests by Source',
+				icon: icon('tag', 18), label: 'Requests by Source',
 				value: top_sources.length,
 				subHtml: top_sources.length
 					? top_sources.slice(0, 4).map((k) => `<span style="display:block;font-size:11.5px;color:#5a6068"><b>${frappe.utils.escape_html(k)}:</b> ${by_source[k]}</span>`).join('')
@@ -811,32 +815,36 @@ class SupportIIDDashboard {
 		// Exact order requested: Total Cases, Approved Cases, On Hold, In Progress, Sent Back, Declines
 		var status_cards = [
 			{
-				icon: icon('list', 16), label: 'Total Cases', value: rows.length,
-				sub: status_summary,
+				icon: icon('list', 18), label: 'Total Cases', value: rows.length,
+				// Kept short and one-line on purpose — every status already
+				// has its own card in this same row, so a full breakdown
+				// here was pure repetition and, being unbounded in length,
+				// made this card grow taller than the rest of the row.
+				sub: 'across all statuses',
 				click: () => self.open_drilldown('All cases', () => true)
 			},
 			{
-				icon: icon('checkCircle', 16), label: 'Approved Cases', value: approved_rows.length,
+				icon: icon('checkCircle', 18), label: 'Approved Cases', value: approved_rows.length,
 				sub: format_currency(total_approved_value) + ' approved',
 				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
 			},
 			{
-				icon: icon('pauseCircle', 16), label: 'On Hold Cases', value: on_hold_rows.length,
+				icon: icon('pauseCircle', 18), label: 'On Hold Cases', value: on_hold_rows.length,
 				sub: 'paused pending information',
 				click: () => self.open_drilldown('On hold cases', (c) => c.case_status === 'On Hold')
 			},
 			{
-				icon: icon('clock', 16), label: 'Cases In Progress', value: in_progress_rows.length,
+				icon: icon('clock', 18), label: 'Cases In Progress', value: in_progress_rows.length,
 				sub: 'awaiting review, approval, or action',
 				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status))
 			},
 			{
-				icon: icon('cornerUpLeft', 16), label: 'Sent Back for Revision', value: sent_back_rows.length,
+				icon: icon('cornerUpLeft', 18), label: 'Sent Back for Revision', value: sent_back_rows.length,
 				sub: 'sent back to the requestor',
 				click: () => self.open_drilldown('Sent back cases', (c) => c.case_status === 'Sent Back')
 			},
 			{
-				icon: icon('xCircle', 16), label: 'Total Declines', value: declined_rows.length,
+				icon: icon('xCircle', 18), label: 'Total Declines', value: declined_rows.length,
 				sub: 'cases marked Rejected',
 				click: () => self.open_drilldown('Declined cases', (c) => c.case_status === 'Rejected')
 			}
