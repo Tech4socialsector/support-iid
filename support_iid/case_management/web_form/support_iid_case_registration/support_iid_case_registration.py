@@ -26,4 +26,49 @@ def get_document_types(type_of_request):
                 "type_of_request_list": matching
             })
 
-    return documents        
+    return documents   
+
+
+
+
+
+@frappe.whitelist(allow_guest=True)
+def get_case_approval_hierarchy(email):
+    hierarchy_name = frappe.db.get_value(
+        "Approval Hierarchy",
+        {
+            "requestor_email": email
+        },
+        "name"
+    )
+
+    if not hierarchy_name:
+        frappe.throw(
+            f"No Approval Hierarchy found for {email}"
+        )
+
+    hierarchy = frappe.get_doc(
+        "Approval Hierarchy",
+        hierarchy_name
+    )
+
+    approval_stage = []
+
+    for row in hierarchy.approval_hierarchy_details:
+
+        approval_stage.append({
+
+            "approver_name": row.approver_name,
+            "approver_email": row.approver_email,
+            "case_approval_level_decription": row.case_approval_level_decription,
+            "case_approval_status": "",
+            "case_approval_via": row.case_approval_via
+
+        })
+
+    return {
+
+        "requestor_name": hierarchy.requestor_name,
+        "approval_stage": approval_stage
+
+    }

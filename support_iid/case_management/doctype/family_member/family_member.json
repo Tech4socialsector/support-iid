@@ -28,8 +28,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Relationship",
-   "options": "Family Member Relationship",
-   "reqd": 1
+   "options": "Family Member Relationship"
   },
   {
    "fieldname": "age",
@@ -52,19 +51,21 @@
    "fieldname": "monthly_income",
    "fieldtype": "Currency",
    "in_list_view": 1,
-   "label": "Monthly Income"
+   "label": "Monthly Income",
+   "reqd": 1
   },
   {
    "fieldname": "marital_status",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Marital Status"
+   "label": "Marital Status",
+   "options": "\nSingle\nMarried\nDivorced\nWidowed"
   },
   {
    "fieldname": "occupation",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Occupation"
+   "label": "Occupational status"
   },
   {
    "columns": 3,
@@ -79,7 +80,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-20 09:54:58.552200",
+ "modified": "2026-07-23 15:16:40.296911",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Family Member",

@@ -21,7 +21,7 @@
  "list_columns": [],
  "login_required": 0,
  "max_attachment_size": 0,
- "modified": "2026-07-21 15:19:57.700001",
+ "modified": "2026-07-23 15:15:53.620201",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "support-iid-case-registration",
@@ -62,10 +62,10 @@
   },
   {
    "allow_read_on_all_link_options": 0,
-   "fieldname": "primary_spoc_name",
+   "fieldname": "requestor_name",
    "fieldtype": "Data",
    "hidden": 0,
-   "label": "Primary SPOC's Name",
+   "label": "Requestor Name",
    "max_length": 0,
    "max_value": 0,
    "options": "Name",
@@ -76,10 +76,10 @@
   },
   {
    "allow_read_on_all_link_options": 0,
-   "fieldname": "primary_spoc_mobile_number",
+   "fieldname": "requestor_mobile_number",
    "fieldtype": "Data",
    "hidden": 0,
-   "label": "Primary SPOC's Mobile number ",
+   "label": "Requestor Mobile number ",
    "max_length": 0,
    "max_value": 0,
    "options": "Phone",
@@ -90,23 +90,10 @@
   },
   {
    "allow_read_on_all_link_options": 0,
-   "fieldname": "department",
+   "fieldname": "work_location",
    "fieldtype": "Data",
    "hidden": 0,
-   "label": "Department",
-   "max_length": 0,
-   "max_value": 0,
-   "precision": "",
-   "read_only": 0,
-   "reqd": 1,
-   "show_in_filter": 0
-  },
-  {
-   "allow_read_on_all_link_options": 0,
-   "fieldname": "column_break_fbnu",
-   "fieldtype": "Column Break",
-   "hidden": 0,
-   "label": "",
+   "label": "Work location",
    "max_length": 0,
    "max_value": 0,
    "precision": "",
@@ -116,10 +103,23 @@
   },
   {
    "allow_read_on_all_link_options": 0,
-   "fieldname": "work_location",
+   "fieldname": "department",
    "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Department",
+   "max_length": 0,
+   "max_value": 0,
+   "precision": "",
+   "read_only": 0,
+   "reqd": 0,
+   "show_in_filter": 0
+  },
+  {
+   "allow_read_on_all_link_options": 0,
+   "fieldname": "column_break_fbnu",
+   "fieldtype": "Column Break",
    "hidden": 0,
-   "label": "Work location",
+   "label": "",
    "max_length": 0,
    "max_value": 0,
    "precision": "",
@@ -142,6 +142,20 @@
   },
   {
    "allow_read_on_all_link_options": 0,
+   "fieldname": "function",
+   "fieldtype": "Link",
+   "hidden": 0,
+   "label": "Function / Unit",
+   "max_length": 0,
+   "max_value": 0,
+   "options": "Functions list",
+   "precision": "",
+   "read_only": 0,
+   "reqd": 1,
+   "show_in_filter": 0
+  },
+  {
+   "allow_read_on_all_link_options": 0,
    "fieldname": "source_of_request",
    "fieldtype": "Select",
    "hidden": 0,
@@ -151,7 +165,7 @@
    "options": "\nField State\nPhilanthropy member\nHealth operations\nReferred by partner\nEmail\nLetter",
    "precision": "",
    "read_only": 0,
-   "reqd": 1,
+   "reqd": 0,
    "show_in_filter": 0
   },
   {
@@ -204,7 +218,7 @@
    "max_value": 0,
    "precision": "",
    "read_only": 0,
-   "reqd": 0,
+   "reqd": 1,
    "show_in_filter": 0
   },
   {
@@ -243,7 +257,7 @@
    "label": "Marital Status",
    "max_length": 0,
    "max_value": 0,
-   "options": "",
+   "options": "\nSingle\nMarried\nDivorced\nWidowed",
    "precision": "",
    "read_only": 0,
    "reqd": 1,
@@ -438,7 +452,6 @@
   },
   {
    "allow_read_on_all_link_options": 0,
-   "description": "Use the \"Add Row\" button below to add records.",
    "fieldname": "family_members",
    "fieldtype": "Table",
    "hidden": 0,
@@ -500,7 +513,7 @@
    "max_value": 0,
    "precision": "",
    "read_only": 0,
-   "reqd": 0,
+   "reqd": 1,
    "show_in_filter": 0
   },
   {
@@ -539,7 +552,7 @@
    "max_value": 0,
    "precision": "",
    "read_only": 0,
-   "reqd": 1,
+   "reqd": 0,
    "show_in_filter": 0
   },
   {
@@ -565,7 +578,7 @@
    "max_value": 0,
    "precision": "",
    "read_only": 0,
-   "reqd": 0,
+   "reqd": 1,
    "show_in_filter": 0
   },
   {
@@ -578,7 +591,7 @@
    "max_value": 0,
    "precision": "",
    "read_only": 0,
-   "reqd": 0,
+   "reqd": 1,
    "show_in_filter": 0
   },
   {
@@ -592,7 +605,7 @@
    "options": "\nOwn\nRent",
    "precision": "",
    "read_only": 0,
-   "reqd": 0,
+   "reqd": 1,
    "show_in_filter": 0
   },
   {
@@ -605,7 +618,7 @@
    "max_value": 0,
    "precision": "",
    "read_only": 0,
-   "reqd": 0,
+   "reqd": 1,
    "show_in_filter": 0
   },
   {
@@ -662,21 +675,23 @@
    "options": "\nYes\nNo",
    "precision": "",
    "read_only": 0,
-   "reqd": 0,
+   "reqd": 1,
    "show_in_filter": 0
   },
   {
    "allow_read_on_all_link_options": 0,
-   "depends_on": "eval.physical_verification==\"Yes\";",
+   "depends_on": "eval:doc.physical_verification==\"Yes\";",
    "fieldname": "physical_verification_notes",
    "fieldtype": "Small Text",
    "hidden": 0,
    "label": "Physical Verification Notes",
+   "mandatory_depends_on": "eval:doc.physical_verification==\"Yes\";",
    "max_length": 0,
    "max_value": 0,
    "options": "",
    "precision": "",
    "read_only": 0,
+   "read_only_depends_on": "",
    "reqd": 0,
    "show_in_filter": 0
   },
@@ -757,6 +772,33 @@
    "max_length": 0,
    "max_value": 0,
    "options": "Case Documents",
+   "precision": "",
+   "read_only": 0,
+   "reqd": 0,
+   "show_in_filter": 0
+  },
+  {
+   "allow_read_on_all_link_options": 0,
+   "fieldname": "case_approval",
+   "fieldtype": "Section Break",
+   "hidden": 0,
+   "label": "Case Approval",
+   "max_length": 0,
+   "max_value": 0,
+   "precision": "",
+   "read_only": 0,
+   "reqd": 0,
+   "show_in_filter": 0
+  },
+  {
+   "allow_read_on_all_link_options": 0,
+   "fieldname": "case_approval_stage",
+   "fieldtype": "Table",
+   "hidden": 0,
+   "label": "Case Approval Stage",
+   "max_length": 0,
+   "max_value": 0,
+   "options": "Case Approval Stage",
    "precision": "",
    "read_only": 0,
    "reqd": 0,

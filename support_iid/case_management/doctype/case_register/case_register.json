@@ -8,15 +8,17 @@
  "field_order": [
   "basic_information_section",
   "requestor_email",
-  "primary_spoc_mobile_number",
-  "primary_spoc_name",
+  "requestor_name",
+  "requestor_mobile_number",
   "type_of_request",
   "work_location",
   "column_break_fbnu",
   "case_status",
+  "current_approval_level",
   "request_date",
   "source_of_request",
   "department",
+  "function",
   "beneficiary_information_section",
   "beneficiary_name",
   "age",
@@ -64,10 +66,19 @@
   "milaap_recommendation",
   "case_documents_section",
   "supporting_documents",
-  "case_approval_log_section",
+  "case_approval",
   "case_approval_stage",
   "show_activity_details",
-  "case_approval_log"
+  "case_approval_log",
+  "closure_of_case",
+  "approved_date",
+  "date_of_transfer",
+  "status_of_milaap_transfer",
+  "case_document",
+  "column_break_ninc",
+  "approved_amount",
+  "refund_amount_if_any",
+  "utr_details"
  ],
  "fields": [
   {
@@ -77,8 +88,17 @@
   },
   {
    "fieldname": "case_status",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Case Status",
+   "options": "Case Status List"
+  },
+  {
+   "fieldname": "current_approval_level",
    "fieldtype": "Data",
-   "label": "Case Status"
+   "label": "Current Approval Level",
+   "read_only": 1
   },
   {
    "fieldname": "type_of_request",
@@ -347,22 +367,6 @@
    "options": "Email"
   },
   {
-   "fieldname": "primary_spoc_mobile_number",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Primary SPOC's Mobile number ",
-   "options": "Phone",
-   "reqd": 1
-  },
-  {
-   "fieldname": "primary_spoc_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Primary SPOC's Name",
-   "options": "Name",
-   "reqd": 1
-  },
-  {
    "fieldname": "family_members_details_section",
    "fieldtype": "Section Break",
    "label": "Family Members Details"
@@ -372,11 +376,6 @@
    "fieldtype": "Table",
    "label": "Family Members",
    "options": "Family Member"
-  },
-  {
-   "fieldname": "case_approval_log_section",
-   "fieldtype": "Section Break",
-   "label": "Case Approval Log"
   },
   {
    "default": "0",
@@ -395,6 +394,7 @@
    "fieldname": "marital_status",
    "fieldtype": "Select",
    "label": "Marital Status",
+   "options": "\nSingle\nMarried\nDivorced\nWidowed",
    "reqd": 1
   },
   {
@@ -423,12 +423,84 @@
    "fieldname": "work_location",
    "fieldtype": "Data",
    "label": "Work location"
+  },
+  {
+   "fieldname": "requestor_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Requestor Name",
+   "options": "Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "requestor_mobile_number",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Requestor Mobile number ",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "case_approval",
+   "fieldtype": "Section Break",
+   "label": "Case Approval"
+  },
+  {
+   "fieldname": "approved_date",
+   "fieldtype": "Date",
+   "label": "Approved date"
+  },
+  {
+   "fieldname": "approved_amount",
+   "fieldtype": "Currency",
+   "label": "Approved Amount"
+  },
+  {
+   "fieldname": "date_of_transfer",
+   "fieldtype": "Date",
+   "label": "Date of transfer"
+  },
+  {
+   "fieldname": "utr_details",
+   "fieldtype": "Data",
+   "label": "UTR details"
+  },
+  {
+   "fieldname": "refund_amount_if_any",
+   "fieldtype": "Currency",
+   "label": "Refund amount (if any)"
+  },
+  {
+   "fieldname": "status_of_milaap_transfer",
+   "fieldtype": "Select",
+   "label": "Status of Milaap transfer",
+   "options": "\nPending\nPartially Disbursed\nFully Disbursed"
+  },
+  {
+   "fieldname": "column_break_ninc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "closure_of_case",
+   "fieldtype": "Section Break",
+   "label": "Closure of case"
+  },
+  {
+   "fieldname": "function",
+   "fieldtype": "Link",
+   "label": "Function / Unit",
+   "options": "Functions list"
+  },
+  {
+   "fieldname": "case_document",
+   "fieldtype": "Attach",
+   "label": "Case Document"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-21 15:17:42.781497",
+ "modified": "2026-07-27 12:50:29.260977",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Register",
@@ -446,6 +518,15 @@
    "role": "System Manager",
    "share": 1,
    "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Support IID Approver",
+   "share": 0
   }
  ],
  "row_format": "Dynamic",

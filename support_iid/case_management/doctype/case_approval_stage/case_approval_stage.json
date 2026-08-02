@@ -7,31 +7,30 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
-  "case_approval_level",
-  "case_approval_level_decription",
+  "approver_name",
+  "approver_email",
   "case_approval_status",
   "column_break_ofsc",
-  "approver_name",
-  "approver_email"
+  "case_approval_level_decription",
+  "case_approval_via"
  ],
  "fields": [
   {
-   "fieldname": "case_approval_level",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Case Approval level"
-  },
-  {
+   "columns": 3,
    "fieldname": "case_approval_level_decription",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
-   "label": "Case Approval level Decription"
+   "label": "Case Approval level Decription",
+   "options": "Case Approval level settings"
   },
   {
+   "columns": 3,
    "fieldname": "case_approval_status",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
+   "hidden": 1,
    "in_list_view": 1,
-   "label": "Case Approval Status"
+   "label": "Case Approval Status",
+   "options": "\nAwaiting For Approval\nApprove\nDecline\nSend Back"
   },
   {
    "fieldname": "column_break_ofsc",
@@ -48,13 +47,23 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Approver Email"
+  },
+  {
+   "columns": 3,
+   "default": "Support ID Portal",
+   "fieldname": "case_approval_via",
+   "fieldtype": "Select",
+   "hidden": 1,
+   "in_list_view": 1,
+   "label": "Case Approval Via",
+   "options": "\nEmail or Web form\nSupport ID Portal"
   }
  ],
  "grid_page_length": 100,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-20 17:44:59.338051",
+ "modified": "2026-07-23 14:49:17.640423",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Approval Stage",

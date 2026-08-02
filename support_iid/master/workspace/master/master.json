@@ -1,0 +1,115 @@
+{
+ "app": "support_iid",
+ "charts": [],
+ "content": "[{\"id\":\"master-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\"><b>Master</b></span>\",\"col\":12}},{\"id\":\"master-shortcuts\",\"type\":\"spacer\",\"data\":{\"col\":12}},{\"id\":\"sc-case-status\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Case Status List\",\"col\":3}},{\"id\":\"sc-type-of-request\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Type of Request List\",\"col\":3}},{\"id\":\"sc-documents-list\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Documents list\",\"col\":3}},{\"id\":\"sc-functions-list\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Functions list\",\"col\":3}},{\"id\":\"sc-qualification\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Qualification\",\"col\":3}},{\"id\":\"sc-family-relationship\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Family Member Relationship\",\"col\":3}},{\"id\":\"sc-approval-hierarchy\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Approval Hierarchy\",\"col\":3}},{\"id\":\"sc-approval-level-settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Case Approval level settings\",\"col\":3}},{\"id\":\"sc-graph-settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Microsoft Graph Settings\",\"col\":3}},{\"id\":\"sc-support-iid-settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Support IID Settings\",\"col\":3}}]",
+ "creation": "2026-07-30 16:00:00.000000",
+ "custom_blocks": [],
+ "docstatus": 0,
+ "doctype": "Workspace",
+ "for_user": "",
+ "hide_custom": 0,
+ "icon": "settings",
+ "idx": 0,
+ "is_hidden": 0,
+ "label": "Master",
+ "links": [],
+ "modified": "2026-07-30 16:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master",
+ "name": "Master",
+ "owner": "Administrator",
+ "parent_page": "",
+ "public": 1,
+ "quick_lists": [],
+ "restrict_to_domain": "",
+ "roles": [
+  {
+   "role": "System Manager"
+  }
+ ],
+ "sequence_id": 20.0,
+ "shortcuts": [
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Case Status List",
+   "link_to": "Case Status List",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Type of Request List",
+   "link_to": "Type of Request List",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Documents list",
+   "link_to": "Documents list",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Functions list",
+   "link_to": "Functions list",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Qualification",
+   "link_to": "Qualification",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Family Member Relationship",
+   "link_to": "Family Member Relationship",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Approval Hierarchy",
+   "link_to": "Approval Hierarchy",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Case Approval level settings",
+   "link_to": "Case Approval level settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Microsoft Graph Settings",
+   "link_to": "Microsoft Graph Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "List",
+   "label": "Support IID Settings",
+   "link_to": "Support IID Settings",
+   "stats_filter": "[]",
+   "type": "DocType"
+  }
+ ],
+ "title": "Master",
+ "type": "Workspace"
+}

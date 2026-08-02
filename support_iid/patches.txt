@@ -4,3 +4,7 @@
 
 [post_model_sync]
 # Patches added in this section will be executed after doctypes are migrated
+support_iid.patches.rename_push_back_to_send_back
+support_iid.patches.split_case_status_and_level
+support_iid.patches.create_support_iid_approver_role
+support_iid.patches.create_support_iid_settings

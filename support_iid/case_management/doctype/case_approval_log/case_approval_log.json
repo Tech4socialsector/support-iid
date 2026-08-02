@@ -10,7 +10,8 @@
   "approval_log_section",
   "date",
   "level",
-  "approver",
+  "approver_name",
+  "approver_name_email",
   "action",
   "comments"
  ],
@@ -34,29 +35,36 @@
    "label": "Level"
   },
   {
-   "fieldname": "approver",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Approver"
-  },
-  {
    "fieldname": "action",
-   "fieldtype": "Data",
+   "fieldtype": "Select",
    "in_list_view": 1,
-   "label": "Action"
+   "label": "Action",
+   "options": "\nAwaiting For Approval\nApprove\nDecline\nSend Back"
   },
   {
    "fieldname": "comments",
    "fieldtype": "Small Text",
    "in_list_view": 1,
    "label": "Comments"
+  },
+  {
+   "fieldname": "approver_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Approver Name"
+  },
+  {
+   "fieldname": "approver_name_email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Approver Name Email"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-18 10:02:44.793601",
+ "modified": "2026-07-23 14:49:42.234925",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Approval Log",

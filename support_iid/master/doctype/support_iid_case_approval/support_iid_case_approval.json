@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "SCA-.##########",
+ "creation": "2026-07-22 15:03:53.124768",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "support_iid_case_approval_details_section",
+  "date",
+  "case_id",
+  "approver_name",
+  "approver_name_email",
+  "action",
+  "column_break_vrdc",
+  "case_approval_level_decription",
+  "comments"
+ ],
+ "fields": [
+  {
+   "fieldname": "support_iid_case_approval_details_section",
+   "fieldtype": "Section Break",
+   "label": "Support IID Case Approval Details"
+  },
+  {
+   "fieldname": "date",
+   "fieldtype": "Date",
+   "label": "Date"
+  },
+  {
+   "fieldname": "case_id",
+   "fieldtype": "Link",
+   "label": "Case ID",
+   "options": "Case Register"
+  },
+  {
+   "fieldname": "approver_name",
+   "fieldtype": "Data",
+   "label": "Approver Name"
+  },
+  {
+   "fieldname": "approver_name_email",
+   "fieldtype": "Data",
+   "label": "Approver Name Email"
+  },
+  {
+   "fieldname": "action",
+   "fieldtype": "Select",
+   "label": "Action",
+   "options": "\nApprove\nDecline\nSend Back"
+  },
+  {
+   "fieldname": "column_break_vrdc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "case_approval_level_decription",
+   "fieldtype": "Link",
+   "label": "Case Approval level Decription",
+   "options": "Case Approval level settings"
+  },
+  {
+   "depends_on": "eval:doc.action==\"Decline\"||doc.action==\"Send Back\";",
+   "fieldname": "comments",
+   "fieldtype": "Small Text",
+   "label": "Comments"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-07-30 11:18:28.503539",
+ "modified_by": "Administrator",
+ "module": "Master",
+ "name": "Support IID Case Approval",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "rows_threshold_for_grid_search": 20,
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1,
+ "track_seen": 1
+}
