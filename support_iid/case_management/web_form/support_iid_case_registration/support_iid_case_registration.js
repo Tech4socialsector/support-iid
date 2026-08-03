@@ -115,6 +115,39 @@ frappe.ready(function () {
         caseDocumentsLoaded = true;
     }
 
+    // Fills the Family Members grid — same df.data pattern as
+    // fillSupportingDocuments/fillApprovalStages, since family_members is
+    // also a Table field and the generic set_value loop below can't
+    // populate it (web form grids render from field.df.data, not from
+    // frappe.web_form.doc[fieldname]).
+    function fillFamilyMembers(rows) {
+        var field = frappe.web_form.fields_dict["family_members"];
+        var grid = field && field.grid;
+        if (!grid) return;
+
+        var built = (rows || []).map(function (r, i) {
+            return {
+                doctype: "Family Member",
+                parentfield: "family_members",
+                parenttype: frappe.web_form.doc.doctype,
+                parent: frappe.web_form.doc.name,
+                idx: i + 1,
+                member_name:    r.member_name || '',
+                relationship:   r.relationship || '',
+                age:            r.age || '',
+                qualification:  r.qualification || '',
+                monthly_income: r.monthly_income || 0,
+                marital_status: r.marital_status || '',
+                occupation:     r.occupation || '',
+                __islocal: 1
+            };
+        });
+
+        field.df.data = built;
+        frappe.web_form.doc.family_members = built;
+        grid.refresh();
+    }
+
     function fetchCaseForEdit() {
         isPrefilling = true;
         frappe.call({
@@ -125,13 +158,24 @@ frappe.ready(function () {
                 decryptPayload(r.message).then(function (resolved) {
                     var data = resolved.data || {};
                     unlockFormAfterVerified();
+                    // supporting_documents, case_approval_stage, and
+                    // family_members are all Table fields — handled
+                    // separately via fillSupportingDocuments/fillApprovalStages/
+                    // fillFamilyMembers, which write to field.df.data (what the
+                    // grid actually renders from in a web form) rather than just
+                    // frappe.web_form.doc[fieldname], which the generic set_value
+                    // path below uses and which the grid does NOT read from here.
+                    // Going through the generic path for these left the grid
+                    // showing stale/default rows instead of the case's real data.
                     Object.keys(data).forEach(function (fieldname) {
-                        if (fieldname === 'supporting_documents') return;
+                        if (fieldname === 'supporting_documents' || fieldname === 'case_approval_stage' || fieldname === 'family_members') return;
                         if (data[fieldname] !== undefined && data[fieldname] !== null) {
                             frappe.web_form.set_value(fieldname, data[fieldname]);
                         }
                     });
                     fillSupportingDocuments(data.supporting_documents);
+                    fillApprovalStages(data.case_approval_stage);
+                    fillFamilyMembers(data.family_members);
                 }).catch(function () {
                     frappe.msgprint('This edit link is invalid or has expired.');
                 }).finally(function () {
@@ -143,6 +187,24 @@ frappe.ready(function () {
                 isPrefilling = false;
             }
         });
+    }
+
+    // Replaces the whole page body with a clear, final confirmation once
+    // the resubmit actually succeeds — no reload, no re-entering the OTP
+    // flow on a now-stale edit token, no ambiguity about whether the
+    // submit went through.
+    function showResubmitSuccess(caseStatus) {
+        $('.web-form-body').remove();
+        $('.web-form-footer').remove();
+        $('#cr-edit-otp-panel').remove();
+        var $success = $(
+            '<div style="text-align:center;padding:48px 20px">' +
+            '<div style="font-size:40px;color:#2f9e5b;margin-bottom:12px">&#10003;</div>' +
+            '<div style="font-size:18px;font-weight:600;color:#1a1a1a;margin-bottom:6px">Your case has been resubmitted for approval.</div>' +
+            '<div style="font-size:13px;color:#8d99a6">Current status: ' + frappe.utils.escape_html(caseStatus) + '</div>' +
+            '</div>'
+        );
+        $('.web-form').append($success);
     }
 
     function addEditModeOtpControls() {
@@ -306,6 +368,63 @@ frappe.ready(function () {
 
         validationErrors.delete(fieldname);
         refreshSaveVisibility();
+    }
+
+    // Replaces Frappe's own mandatory-field check for the fresh-submission
+    // path. This is a single-page web form (no Page Break fields), so the
+    // actual gate that runs on Save is FieldGroup.get_values() (frappe/
+    // public/js/frappe/ui/field_group.js), called via `super.get_values(...)`
+    // inside WebForm.save() — which shows one popup dialog listing every
+    // missing/invalid field by label ("Missing Values Required"). `super.`
+    // calls always resolve against the prototype, so overriding
+    // frappe.web_form.get_values on the instance would NOT intercept that
+    // particular call and can't be used to fix this from here. Overriding
+    // save() itself instead lets us run the same mandatory/invalid scan
+    // ourselves first, show each problem inline under its own field (like
+    // the email/mobile/pincode checks above) instead of one popup, and only
+    // continue to the real save when everything passes.
+    var original_save = frappe.web_form.save.bind(frappe.web_form);
+
+    function validate_all_fields_inline() {
+        var first_invalid_fieldname = null;
+
+        frappe.web_form.fields.forEach(function (df) {
+            var fieldname = df.fieldname;
+            if (!fieldname) return;
+
+            var field = frappe.web_form.fields_dict[fieldname];
+            if (!field || !field.get_value || df.hidden) return;
+
+            var value = field.get_value();
+            var is_empty = is_null(typeof value === "string" ? strip_html(value) : value);
+            var is_invalid = df.reqd && (
+                is_empty ||
+                (df.fieldtype === "Text Editor" && is_null(strip_html(cstr(value))))
+            );
+
+            if (is_invalid || df.invalid) {
+                fieldError(fieldname, is_invalid
+                    ? __("{0} is required.", [__(df.label)])
+                    : __("{0} has an invalid value.", [__(df.label)]));
+                if (!first_invalid_fieldname) first_invalid_fieldname = fieldname;
+            }
+        });
+
+        if (first_invalid_fieldname) {
+            var fd = frappe.web_form.fields_dict[first_invalid_fieldname];
+            if (fd && fd.$wrapper && fd.$wrapper.length) {
+                fd.$wrapper[0].scrollIntoView({ behavior: "smooth", block: "center" });
+            }
+            return false;
+        }
+        return true;
+    }
+
+    if (!editToken) {
+        frappe.web_form.save = function () {
+            if (!validate_all_fields_inline()) return false;
+            return original_save();
+        };
     }
 
     /* =========================================================
@@ -796,7 +915,23 @@ frappe.ready(function () {
     ========================================================= */
 
     if (editToken) {
-        frappe.web_form.validate = function () {
+        // Edit mode overrides the ENTIRE save() (not just validate()) so we
+        // fully control feedback to the user. Frappe's own save()
+        // (frappe/public/js/frappe/web_form/web_form.js) does:
+        //   let valid = this.validate && this.validate();
+        //   if (!valid && valid !== undefined) { frappe.msgprint("Couldn't
+        //   save, please check the data you have entered", ...); return; }
+        //   ... otherwise falls through to the real (guest-blocked) accept
+        //   save call ...
+        // There's no way to make a validate() override both (a) block that
+        // real accept call and (b) avoid the generic popup: returning
+        // `false` blocks it but always pops the message; returning
+        // `undefined` avoids the popup but lets the real accept call run
+        // underneath us, which we don't want — this whole flow exists to
+        // replace that call with submit_case_edit instead. Overriding
+        // save() itself sidesteps the trade-off: our own frappe.call is the
+        // only thing that runs, and it owns all success/error messaging.
+        frappe.web_form.save = function () {
             if (!editVerifyTicket) {
                 frappe.msgprint('Please verify your email with the code sent to you before saving.');
                 return false;
@@ -826,8 +961,16 @@ frappe.ready(function () {
                     if (!r.message) return;
                     decryptPayload(r.message).then(function (data) {
                         if (data && data.case_status) {
-                            frappe.msgprint('Your case has been resubmitted for approval.');
-                            setTimeout(function () { window.location.reload(); }, 1500);
+                            // Reloading the same URL after this point would
+                            // re-run the whole edit-mode flow from scratch on
+                            // a token that's no longer valid for editing —
+                            // the case has already moved on, so re-verifying
+                            // would just fail and leave the page showing the
+                            // bare "verify your email" panel with no
+                            // confirmation the resubmit actually worked.
+                            // Replace the page content with a clear success
+                            // state instead of reloading.
+                            showResubmitSuccess(data.case_status);
                         }
                     });
                 },
@@ -837,7 +980,7 @@ frappe.ready(function () {
                 }
             });
 
-            return false; // always block the standard save path in edit mode
+            return false;
         };
     }
 

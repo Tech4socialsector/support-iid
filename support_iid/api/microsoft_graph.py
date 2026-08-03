@@ -644,6 +644,38 @@ def _stages_from_graph_chain(manager_chain: list, funds_requested: float, functi
 
 
 # ------------------------------------------------------------------
+# Current-reviewer lookup — used when a Sent-Back case is resubmitted,
+# so the re-sent approval email goes to whoever is presently configured
+# as that level's approver in Approval Hierarchy, not whoever it was
+# when the case was first submitted (the org's reviewers can change).
+# ------------------------------------------------------------------
+
+def get_current_approver_for_level(requestor_email: str, level_name: str):
+    """
+    Returns {"approver_name", "approver_email"} for the given level from
+    the requestor's current Approval Hierarchy record, or None if no
+    hierarchy doc or no matching level row exists (caller should keep
+    the case's existing approver in that case).
+    """
+    hierarchy_name = _find_hierarchy_doc(requestor_email)
+    if not hierarchy_name:
+        return None
+
+    try:
+        doc = frappe.get_doc("Approval Hierarchy", hierarchy_name)
+    except Exception:
+        return None
+
+    for row in (doc.get("approval_hierarchy_details") or []):
+        if (row.get("case_approval_level_decription") or "").strip() == (level_name or "").strip():
+            return {
+                "approver_name":  row.get("approver_name") or "",
+                "approver_email": row.get("approver_email") or "",
+            }
+    return None
+
+
+# ------------------------------------------------------------------
 # Manager chain walker
 # ------------------------------------------------------------------
 

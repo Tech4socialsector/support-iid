@@ -694,6 +694,7 @@ class CaseListView {
 			this.test_mode ||
 			user === 'Administrator' ||
 			(frappe.user_roles || []).indexOf('System Manager') > -1 ||
+			(frappe.user_roles || []).indexOf('Support IID Approver') > -1 ||
 			(current.stage.approver_email || '').toLowerCase() === user.toLowerCase()
 		);
 

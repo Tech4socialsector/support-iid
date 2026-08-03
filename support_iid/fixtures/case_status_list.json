@@ -1,0 +1,38 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Case Status List",
+  "modified": "2026-07-30 15:36:17.937676",
+  "name": "Pending Approval"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Case Status List",
+  "modified": "2026-07-30 15:36:17.943387",
+  "name": "Approved"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Case Status List",
+  "modified": "2026-07-30 15:36:17.943986",
+  "name": "Rejected"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Case Status List",
+  "modified": "2026-07-30 15:36:17.944606",
+  "name": "Sent Back"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Case Status List",
+  "modified": "2026-07-30 15:56:20.013559",
+  "name": "On Hold"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Case Status List",
+  "modified": "2026-07-30 15:56:20.042335",
+  "name": "Closed"
+ }
+]

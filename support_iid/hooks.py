@@ -82,6 +82,20 @@ app_license = "mit"
 # 	"filters": "support_iid.utils.jinja_filters"
 # }
 
+# Fixtures
+# ------------
+# Master/config data exported so it installs automatically on any fresh
+# site running this app, not just this dev site.
+
+fixtures = [
+	"Case Status List",
+	"Type of Request List",
+	"Documents list",
+	"Functions list",
+	"Qualification",
+	"Family Member Relationship",
+]
+
 # Installation
 # ------------
 

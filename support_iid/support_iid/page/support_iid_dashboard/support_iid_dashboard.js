@@ -1,4 +1,4 @@
-frappe.pages['support-iid-dashboar'].on_page_load = function (wrapper) {
+frappe.pages['support-iid-dashboard'].on_page_load = function (wrapper) {
 	if (!document.getElementById('siid-office-preview-script')) {
 		var s = document.createElement('script');
 		s.id = 'siid-office-preview-script';
@@ -285,13 +285,17 @@ class SupportIIDDashboard {
 			   (a 2-line label like "Sent Back for Revision" + a value +
 			   a sub line) — content is never clipped, just given a
 			   consistent floor so shorter cards don't look tiny next to it. */
-			.sd-metrics-grid { display:grid; grid-template-columns:repeat(auto-fill, 208px); gap:14px; align-items:stretch; }
+			.sd-metrics-grid { display:grid; grid-template-columns:repeat(auto-fill, 400px); gap:16px; align-items:stretch; }
+			/* Plain neutral cards — no per-card accent colors, just a clean
+			   white card with a subtle lift on hover. Wide and short,
+			   matching a compact dashboard-summary-card look. */
 			.sd-metric-card {
 				background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px;
-				padding:16px 18px; cursor:pointer; transition:box-shadow .12s, transform .12s;
-				width:208px; max-width:100%; min-height:156px; display:flex; flex-direction:column;
+				padding:16px 20px 14px; cursor:pointer; transition:box-shadow .16s, transform .16s;
+				width:400px; max-width:100%; min-height:104px; display:flex; flex-direction:column;
+				box-shadow:0 1px 2px rgba(15,23,32,.04);
 			}
-			.sd-metric-card:hover { box-shadow:0 3px 10px rgba(0,0,0,.07); transform:translateY(-1px); }
+			.sd-metric-card:hover { box-shadow:0 8px 20px rgba(15,23,32,.09); transform:translateY(-2px); }
 			.sd-metric-card.sd-disabled { cursor:default; opacity:.65; }
 			.sd-metric-card.sd-disabled:hover { box-shadow:none; transform:none; }
 
@@ -345,12 +349,12 @@ class SupportIIDDashboard {
 				display:inline-flex; align-items:center; box-shadow:none !important;
 			}
 			.sd-metric-icon {
-				width:28px; height:28px; border-radius:7px; background:#f0f1f3; color:#5a6068;
-				display:flex; align-items:center; justify-content:center; font-size:14px; margin-bottom:9px;
+				width:24px; height:24px; border-radius:6px; background:#f0f1f3; color:#5a6068;
+				display:flex; align-items:center; justify-content:center; font-size:13px; margin-bottom:6px;
 			}
-			.sd-metric-label { font-size:12.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:6px; }
-			.sd-metric-value { font-size:26px; font-weight:700; color:#1a1a1a; line-height:1.2; }
-			.sd-metric-sub { font-size:13px; color:var(--text-muted,#8d99a6); margin-top:5px; }
+			.sd-metric-label { font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:4px; }
+			.sd-metric-value { font-size:24px; font-weight:700; color:#1a1a1a; line-height:1.2; }
+			.sd-metric-sub { font-size:12.5px; color:var(--text-muted,#8d99a6); margin-top:4px; }
 
 			.sd-chart-panel { background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px; padding:20px 22px; }
 			.sd-chart-title { font-size:13px; font-weight:700; margin-bottom:16px; color:#1a1a1a; }
@@ -514,12 +518,6 @@ class SupportIIDDashboard {
 				<div class="sd-filter-bar">
 					<div class="sd-filter-grid">
 						<div class="sd-filter-item">
-							<label>Type of Request</label>
-							<select id="sd-f-type" class="form-control">
-								<option value="">All types</option>
-							</select>
-						</div>
-						<div class="sd-filter-item">
 							<label>Source of Request</label>
 							<select id="sd-f-source" class="form-control">
 								<option value="">All sources</option>
@@ -564,8 +562,8 @@ class SupportIIDDashboard {
 				<div class="sd-section-heading" style="margin-top:22px">Financial Summary</div>
 				<div class="sd-metrics-grid" id="sd-metrics-financial"></div>
 
-				<div class="sd-section-heading" style="margin-top:22px">Insights</div>
-				<div class="sd-metrics-grid" id="sd-metrics-insights"></div>
+				<div class="sd-section-heading" style="margin-top:22px">Types of Request</div>
+				<div class="sd-metrics-grid" id="sd-metrics-types"></div>
 
 				<div class="sd-trend-section">
 					<div class="sd-trend-section-head">
@@ -600,11 +598,22 @@ class SupportIIDDashboard {
 
 		frappe.db.get_list('Type of Request List', { fields: ['name'], limit_page_length: 0 })
 			.then((rows) => {
-				var sel = this.wrapper.find('#sd-f-type');
-				(rows || []).forEach((r) => {
-					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(r.name)}</option>`);
-				});
-				sel.append('<option value="Others">Others</option>');
+				// Cached for the "Types of Request" metric card — built from
+				// whatever entries actually exist in this master doctype,
+				// not a hardcoded Medical/Education list, so a new type
+				// added here shows up on the dashboard automatically.
+				this.request_types = (rows || []).map((r) => r.name);
+				this.render_metrics();
+			});
+
+		frappe.db.get_list('Case Status List', { fields: ['name'], limit_page_length: 0 })
+			.then((rows) => {
+				// Cached for the "Case Status Overview" cards — same idea:
+				// one card per status that actually exists in Case Status
+				// List, so adding a new status there is enough to get a
+				// matching card, no code change needed.
+				this.case_statuses = (rows || []).map((r) => r.name);
+				this.render_metrics();
 			});
 	}
 
@@ -666,11 +675,11 @@ class SupportIIDDashboard {
 			self.test_mode = $(this).is(':checked');
 			self.load_data();
 		});
-		this.wrapper.on('change', '#sd-f-type, #sd-f-source, #sd-f-state, #sd-f-district', function () {
+		this.wrapper.on('change', '#sd-f-source, #sd-f-state, #sd-f-district', function () {
 			self.apply_filters();
 		});
 		this.wrapper.on('click', '#sd-f-clear', function () {
-			self.wrapper.find('#sd-f-type, #sd-f-source, #sd-f-state, #sd-f-district').val('');
+			self.wrapper.find('#sd-f-source, #sd-f-state, #sd-f-district').val('');
 			self.from_control.set_value('');
 			self.upto_control.set_value('');
 			self.apply_filters();
@@ -703,7 +712,6 @@ class SupportIIDDashboard {
 	}
 
 	apply_filters() {
-		var type = this.wrapper.find('#sd-f-type').val();
 		var source = this.wrapper.find('#sd-f-source').val();
 		var district = (this.wrapper.find('#sd-f-district').val() || '').trim().toLowerCase();
 		var state = (this.wrapper.find('#sd-f-state').val() || '').trim().toLowerCase();
@@ -711,7 +719,6 @@ class SupportIIDDashboard {
 		var upto = this.upto_control ? this.upto_control.get_value() : '';
 
 		this.rows = (this.all_rows || []).filter((c) => {
-			if (type && c.type_of_request !== type) return false;
 			if (source && c.source_of_request !== source) return false;
 			if (district && (c.district || '').toLowerCase().indexOf(district) === -1) return false;
 			if (state && (c.state || '').toLowerCase().indexOf(state) === -1) return false;
@@ -734,9 +741,6 @@ class SupportIIDDashboard {
 		var total_approved_value = approved_rows.reduce((s, c) => s + case_amount(c), 0);
 		var total_requested_value = rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
 		var in_progress_rows = rows.filter((c) => is_in_progress(c.case_status));
-		var declined_rows = rows.filter((c) => c.case_status === 'Rejected');
-		var sent_back_rows = rows.filter((c) => c.case_status === 'Sent Back');
-		var on_hold_rows = rows.filter((c) => c.case_status === 'On Hold');
 
 		var by_category = {};
 		approved_rows.forEach((c) => {
@@ -744,29 +748,6 @@ class SupportIIDDashboard {
 			by_category[k] = (by_category[k] || 0) + case_amount(c);
 		});
 		var category_summary = Object.keys(by_category).map((k) => k + ': ' + format_currency(by_category[k])).join(' · ') || 'No approved cases yet';
-
-		// Average days from request to approval, across approved cases with
-		// both dates on record (sample/legacy rows may be missing one).
-		var processing_days = approved_rows
-			.filter((c) => c.request_date && c.approved_date)
-			.map((c) => (new Date(c.approved_date) - new Date(c.request_date)) / 86400000)
-			.filter((d) => d >= 0);
-		var avg_processing_days = processing_days.length
-			? Math.round((processing_days.reduce((s, d) => s + d, 0) / processing_days.length) * 10) / 10
-			: null;
-
-		// Approval rate — of cases with a final decision (Approved or
-		// Rejected), what fraction were approved. Pending/Sent Back/On Hold
-		// cases are still undecided, so they're excluded from the ratio.
-		var decided_count = approved_rows.length + declined_rows.length;
-		var approval_rate = decided_count ? Math.round((approved_rows.length / decided_count) * 100) : null;
-
-		var by_source = {};
-		rows.forEach((c) => {
-			var k = c.source_of_request || 'Unspecified';
-			by_source[k] = (by_source[k] || 0) + 1;
-		});
-		var top_sources = Object.keys(by_source).sort((a, b) => by_source[b] - by_source[a]);
 
 		var financial_cards = [
 			{
@@ -789,30 +770,21 @@ class SupportIIDDashboard {
 			}
 		];
 
-		var insight_cards = [
-			{
-				icon: icon('clock', 18), label: 'Avg. Time to Approval',
-				value: avg_processing_days !== null ? avg_processing_days + ' day' + (avg_processing_days === 1 ? '' : 's') : '—',
-				sub: processing_days.length ? 'across ' + processing_days.length + ' approved case(s)' : 'no approved cases with both dates yet',
-				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
-			},
-			{
-				icon: icon('checkCircle', 18), label: 'Approval Rate',
-				value: approval_rate !== null ? approval_rate + '%' : '—',
-				sub: decided_count ? approved_rows.length + ' approved / ' + decided_count + ' decided' : 'no decided cases yet',
-				click: () => self.open_drilldown('Decided cases', (c) => c.case_status === 'Approved' || c.case_status === 'Rejected')
-			},
-			{
-				icon: icon('tag', 18), label: 'Requests by Source',
-				value: top_sources.length,
-				subHtml: top_sources.length
-					? top_sources.slice(0, 4).map((k) => `<span style="display:block;font-size:11.5px;color:#5a6068"><b>${frappe.utils.escape_html(k)}:</b> ${by_source[k]}</span>`).join('')
-					: '<span style="color:var(--text-muted,#8d99a6);font-style:italic">No cases yet</span>',
-				click: () => self.open_drilldown('All cases', () => true)
-			}
-		];
+		// "Total Cases" and "Cases In Progress" are fixed summary cards
+		// (not single Case Status List entries — In Progress rolls up every
+		// non-terminal status). Every other card here is generated straight
+		// from whatever statuses currently exist in Case Status List, so
+		// adding a new status there is enough to get a matching card —
+		// no code change needed. Icon/status-color reuse the same mapping
+		// already used for the status pill elsewhere on this page.
+		var STATUS_ICON = {
+			'Approved': 'checkCircle', 'Rejected': 'xCircle', 'On Hold': 'pauseCircle',
+			'Sent Back': 'cornerUpLeft', 'Pending Approval': 'clock', 'Closed': 'checkCircle'
+		};
+		var status_list = (this.case_statuses && this.case_statuses.length)
+			? this.case_statuses
+			: ['Pending Approval', 'Approved', 'Rejected', 'Sent Back', 'On Hold', 'Closed'];
 
-		// Exact order requested: Total Cases, Approved Cases, On Hold, In Progress, Sent Back, Declines
 		var status_cards = [
 			{
 				icon: icon('list', 18), label: 'Total Cases', value: rows.length,
@@ -824,35 +796,37 @@ class SupportIIDDashboard {
 				click: () => self.open_drilldown('All cases', () => true)
 			},
 			{
-				icon: icon('checkCircle', 18), label: 'Approved Cases', value: approved_rows.length,
-				sub: format_currency(total_approved_value) + ' approved',
-				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
-			},
-			{
-				icon: icon('pauseCircle', 18), label: 'On Hold Cases', value: on_hold_rows.length,
-				sub: 'paused pending information',
-				click: () => self.open_drilldown('On hold cases', (c) => c.case_status === 'On Hold')
-			},
-			{
 				icon: icon('clock', 18), label: 'Cases In Progress', value: in_progress_rows.length,
 				sub: 'awaiting review, approval, or action',
 				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status))
-			},
-			{
-				icon: icon('cornerUpLeft', 18), label: 'Sent Back for Revision', value: sent_back_rows.length,
-				sub: 'sent back to the requestor',
-				click: () => self.open_drilldown('Sent back cases', (c) => c.case_status === 'Sent Back')
-			},
-			{
-				icon: icon('xCircle', 18), label: 'Total Declines', value: declined_rows.length,
-				sub: 'cases marked Rejected',
-				click: () => self.open_drilldown('Declined cases', (c) => c.case_status === 'Rejected')
 			}
-		];
+		].concat(status_list.map((status) => {
+			var status_rows = rows.filter((c) => c.case_status === status);
+			var sub = status === 'Approved' ? format_currency(total_approved_value) + ' approved'
+				: status_rows.length + ' case(s)';
+			return {
+				icon: icon(STATUS_ICON[status] || 'tag', 18), label: status, value: status_rows.length,
+				sub: sub,
+				click: () => self.open_drilldown(status + ' cases', (c) => c.case_status === status)
+			};
+		}));
+
+		var type_list = (this.request_types && this.request_types.length) ? this.request_types : [];
+		// One card per type actually in Type of Request List (e.g. Medical,
+		// Education), each showing its own case count — adding a new type
+		// there is enough to get a matching card, no code change needed.
+		var type_cards = type_list.map((t) => {
+			var type_rows = rows.filter((c) => c.type_of_request === t);
+			return {
+				icon: icon('tag', 18), label: t, value: type_rows.length,
+				sub: type_rows.length + ' case(s)',
+				click: () => self.open_drilldown(t + ' cases', (c) => c.type_of_request === t)
+			};
+		});
 
 		this.render_metric_group('#sd-metrics-financial', financial_cards);
 		this.render_metric_group('#sd-metrics-status', status_cards);
-		this.render_metric_group('#sd-metrics-insights', insight_cards);
+		this.render_metric_group('#sd-metrics-types', type_cards);
 	}
 
 	render_metric_group(selector, cards) {
@@ -1417,6 +1391,7 @@ class SupportIIDDashboard {
 		var can_act = this.test_mode ||
 			user === 'Administrator' ||
 			(frappe.user_roles || []).indexOf('System Manager') > -1 ||
+			(frappe.user_roles || []).indexOf('Support IID Approver') > -1 ||
 			(current.stage.approver_email || '').toLowerCase() === user.toLowerCase();
 
 		if (!can_act) {

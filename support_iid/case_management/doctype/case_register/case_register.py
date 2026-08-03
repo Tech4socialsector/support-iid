@@ -280,7 +280,11 @@ def _verify_and_consume_otp(token, otp):
 # never checked/exposed a second time.
 # ─────────────────────────────────────────────────────────────────────────────
 
-_VERIFY_TICKET_TTL_SECONDS = 5 * 60
+# Long enough to cover realistic time spent filling in the rest of a long
+# form (family members, documents, etc.) after verifying — a short window
+# here caused "Invalid or expired verification code" on Save even though
+# the OTP itself had just been correctly verified moments before.
+_VERIFY_TICKET_TTL_SECONDS = 60 * 60
 
 
 def _verify_ticket_cache_key(ticket):
@@ -435,7 +439,7 @@ def _email_signature_html():
     (via cid, see _logo_inline_image) — not sent as a file attachment."""
     return (
         '<div style="margin-top:8px;padding-top:12px;border-top:1px solid #d9dce0">'
-        f'<img embed="{_APF_LOGO_FILENAME}" alt="Azim Premji Foundation" height="40"><br>'
+        f'<img src="cid:{_APF_LOGO_FILENAME}" alt="Azim Premji Foundation" height="40"><br>'
         '<span style="font-weight:bold">Support IID Team</span><br>'
         "Azim Premji Foundation<br>"
         '<span style="color:#5a5a5a">'
@@ -457,16 +461,72 @@ def _send_plain_email(recipients, subject, lines, attachments=None):
     minimal structured HTML from `lines`, embeds the APF logo inline in the
     signature, and attaches any extra files (e.g. the case summary PDF or
     supporting documents) passed in `attachments`.
+
+    Sends over raw SMTP (via the site's default outgoing Email Account)
+    instead of frappe.sendmail(). Approver name/email on a case are typed
+    freehand into the Case Approval Stage grid on the public web form —
+    by design, that data is taken as-is and sent to whatever address is on
+    the row, with no email-format check. frappe.sendmail() always runs a
+    strict format validation on every recipient (raises "... is not a
+    valid Email Address" and refuses to send otherwise) with no way to
+    opt out of it — so approval emails are sent through this lower-level
+    path instead, which does no such validation.
     """
     logo = _logo_inline_image()
-    frappe.sendmail(
+    _send_raw_email(
         recipients=recipients,
         subject=subject,
-        message=_build_email_html(lines),
+        html_body=_build_email_html(lines),
         attachments=attachments or None,
         inline_images=[logo] if logo else None,
-        now=True,
     )
+
+
+def _send_raw_email(recipients, subject, html_body, attachments=None, inline_images=None):
+    """Builds and sends a MIME email directly over the default outgoing
+    Email Account's SMTP session, bypassing frappe.sendmail()'s recipient
+    validation entirely. Recipients are used exactly as given."""
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+    from email.mime.application import MIMEApplication
+    from email.mime.image import MIMEImage
+    from email.utils import formataddr, formatdate, make_msgid
+
+    email_account = frappe.get_doc("Email Account", {"default_outgoing": 1})
+    sender_email = email_account.email_id
+    sender_name = email_account.name or "Support IID"
+
+    root = MIMEMultipart("mixed")
+    root["Subject"] = subject
+    root["From"] = formataddr((sender_name, sender_email))
+    root["To"] = ", ".join(recipients)
+    root["Date"] = formatdate(localtime=True)
+    root["Message-Id"] = make_msgid()
+
+    alt = MIMEMultipart("related")
+    root.attach(alt)
+    alt.attach(MIMEText(html_body, "html", "utf-8"))
+
+    for img in (inline_images or []):
+        part = MIMEImage(img["filecontent"])
+        part.add_header("Content-ID", f"<{img['filename']}>")
+        part.add_header("Content-Disposition", "inline", filename=img["filename"])
+        alt.attach(part)
+
+    for att in (attachments or []):
+        fid = att.get("fid")
+        if not fid:
+            continue
+        file_doc = frappe.get_doc("File", fid)
+        content = file_doc.get_content()
+        if isinstance(content, str):
+            content = content.encode("utf-8")
+        part = MIMEApplication(content, Name=file_doc.file_name)
+        part["Content-Disposition"] = f'attachment; filename="{file_doc.file_name}"'
+        root.attach(part)
+
+    smtp = email_account.get_smtp_server()
+    smtp.session.sendmail(sender_email, list(recipients), root.as_string())
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1399,7 +1459,6 @@ class CaseRegister(Document):
         if milaap_link:
             lines.append(f"**Campaign link:** [View Milaap Campaign]({milaap_link})")
         lines.append(f"**Milaap recommendation:** {milaap_rec or '-'}")
-        lines.append(f"**Folder:** [View in Case Registry]({registry_url})")
         lines.append("")
         lines.append("The full case summary PDF and all supporting documents are attached.")
         lines.append("Please review and take appropriate action using the link below.")
@@ -1519,6 +1578,8 @@ def process_case_approval(case_name=None, action=None, comments=None, token=None
 
     if not token_ok:
         if user == "Administrator" or "System Manager" in frappe.get_roles(user):
+            pass
+        elif "Support IID Approver" in frappe.get_roles(user):
             pass
         elif approver_email and user.lower() == approver_email:
             pass
@@ -1778,6 +1839,21 @@ def submit_case_edit(token, data, otp=None, verify_ticket=None):
     for fieldname, value in (data or {}).items():
         if fieldname in editable_fieldnames:
             doc.set(fieldname, value)
+
+    # Re-fetch the current reviewer for this level from Approval Hierarchy —
+    # the org's approvers can change after a case was first submitted, and a
+    # resubmit after Send Back should go to whoever is presently configured
+    # for that level, not whoever it was when the case was originally filed.
+    # Falls back to the case's existing approver if no hierarchy match is found.
+    try:
+        from support_iid.api.microsoft_graph import get_current_approver_for_level
+        level_name = stages[stage_idx].case_approval_level_decription
+        current_approver = get_current_approver_for_level(requestor_email, level_name)
+        if current_approver and current_approver.get("approver_email"):
+            stages[stage_idx].approver_name = current_approver["approver_name"]
+            stages[stage_idx].approver_email = current_approver["approver_email"]
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Reviewer refresh failed on resubmit — {case_name}")
 
     stages[stage_idx].case_approval_status = "Awaiting For Approval"
     doc.case_status = CASE_STATUS_PENDING
