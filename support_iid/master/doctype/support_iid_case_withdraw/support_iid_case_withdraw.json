@@ -1,0 +1,77 @@
+{
+ "actions": [],
+ "allow_bulk_edit": 1,
+ "allow_rename": 1,
+ "autoname": "SCW-.##########",
+ "creation": "2026-08-04 00:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "support_iid_case_withdraw_details_section",
+  "case_id",
+  "beneficiary_name",
+  "column_break_scwd",
+  "requestor_name",
+  "reason"
+ ],
+ "fields": [
+  {
+   "fieldname": "support_iid_case_withdraw_details_section",
+   "fieldtype": "Section Break",
+   "label": "Support IID Case Withdraw Details"
+  },
+  {
+   "fieldname": "case_id",
+   "fieldtype": "Link",
+   "label": "Case ID",
+   "options": "Case Register"
+  },
+  {
+   "fieldname": "beneficiary_name",
+   "fieldtype": "Data",
+   "label": "Beneficiary Name"
+  },
+  {
+   "fieldname": "column_break_scwd",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "requestor_name",
+   "fieldtype": "Data",
+   "label": "Requestor Name"
+  },
+  {
+   "fieldname": "reason",
+   "fieldtype": "Small Text",
+   "label": "Reason for Withdrawal"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-08-04 00:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master",
+ "name": "Support IID Case Withdraw",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

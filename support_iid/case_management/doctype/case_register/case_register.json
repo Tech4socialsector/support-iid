@@ -18,7 +18,6 @@
   "request_date",
   "source_of_request",
   "department",
-  "function",
   "beneficiary_information_section",
   "beneficiary_name",
   "age",
@@ -121,9 +120,9 @@
   },
   {
    "fieldname": "source_of_request",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "label": "Source of Request",
-   "options": "\nField State\nPhilanthropy member\nHealth operations\nReferred by partner\nEmail\nLetter",
+   "options": "Source of Request List",
    "reqd": 1
   },
   {
@@ -486,12 +485,6 @@
    "label": "Closure of case"
   },
   {
-   "fieldname": "function",
-   "fieldtype": "Link",
-   "label": "Function / Unit",
-   "options": "Functions list"
-  },
-  {
    "fieldname": "case_document",
    "fieldtype": "Attach",
    "label": "Case Document"
@@ -500,7 +493,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-27 12:50:29.260977",
+ "modified": "2026-08-04 15:01:02.882011",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Register",
@@ -525,8 +518,15 @@
    "print": 1,
    "read": 1,
    "report": 1,
-   "role": "Support IID Approver",
-   "share": 0
+   "role": "Support IID Approver"
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Reviewer"
   }
  ],
  "row_format": "Dynamic",

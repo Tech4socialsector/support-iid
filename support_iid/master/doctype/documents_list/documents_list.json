@@ -7,6 +7,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
+  "is_mandatory",
   "type_of_request_list"
  ],
  "fields": [
@@ -15,6 +16,12 @@
    "fieldtype": "Table",
    "label": "Type of Request List",
    "options": "Type of Request group"
+  },
+  {
+   "default": "0",
+   "fieldname": "is_mandatory",
+   "fieldtype": "Check",
+   "label": "Is Mandatory"
   }
  ],
  "grid_page_length": 50,

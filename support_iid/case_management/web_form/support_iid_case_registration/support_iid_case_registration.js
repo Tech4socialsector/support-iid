@@ -1,5 +1,21 @@
 frappe.ready(function () {
 
+    // Discard button removed for now (per request) — it lives in Frappe
+    // core's own web form footer template (.web-form-footer .discard-btn,
+    // see frappe/public/js/frappe/web_form/web_form.js), so it's hidden
+    // from here rather than edited there. A <style> rule (not just .hide())
+    // so it stays hidden even if the footer re-renders later in the flow.
+    $('<style>.web-form-footer .discard-btn { display:none !important; }</style>').appendTo('head');
+
+    // Mandatory-document rows in the Supporting Documents grid: a subtle
+    // left border + background tint on the whole row, rather than
+    // injecting "*Required" text into the Document Name cell (which
+    // wrapped onto a second line and broke that row's alignment).
+    $('<style>' +
+        '.sd-mandatory-row { border-left:3px solid #c0392b; background:#fdf3f2; }' +
+        '.sd-mandatory-row .row-index { cursor:help; }' +
+        '</style>').appendTo('head');
+
     /* =========================================================
        EDIT MODE — Send-Back "edit and resubmit" flow.
        If the URL carries ?token=..., this is a requestor editing an
@@ -105,6 +121,7 @@ frappe.ready(function () {
                 document_name: r.document_name || '',
                 attachment:    r.attachment || '',
                 remarks:       r.remarks || '',
+                is_mandatory:  r.is_mandatory ? 1 : 0,
                 __islocal: 1
             };
         });
@@ -112,6 +129,7 @@ frappe.ready(function () {
         field.df.data = built;
         frappe.web_form.doc.supporting_documents = built;
         grid.refresh();
+        markMandatoryDocumentRows();
         caseDocumentsLoaded = true;
     }
 
@@ -312,17 +330,18 @@ frappe.ready(function () {
     }
 
     /* =========================================================
-       SAVE GATING — the Save button is hidden while any custom
-       (non-Frappe-mandatory) validation is failing: invalid pincode,
-       wrong email domain, bad mobile format, future date of birth.
-       Frappe's own required-field checks still run at actual save
-       time as normal; this only covers the checks this form adds.
+       SAVE GATING — on a fresh (non-edit) submission, the Save button
+       stays visible at all times; clicking it runs the normal validate
+       flow (inline errors shown, save blocked via return false) instead
+       of the button disappearing pre-emptively while a field is invalid.
+       In edit mode, Save is still hidden until the OTP is verified —
+       there is genuinely nothing to submit yet at that point.
     ========================================================= */
 
     function refreshSaveVisibility() {
         var $submitBtn = $('.web-form .submit-btn, .web-form-footer .submit-btn');
         var blockedByEdit = editToken && !editVerifyTicket;
-        if (validationErrors.size > 0 || blockedByEdit) {
+        if (blockedByEdit) {
             $submitBtn.hide();
         } else {
             $submitBtn.show();
@@ -410,6 +429,15 @@ frappe.ready(function () {
             }
         });
 
+        // Currency fields: re-check the raw typed text (not just the
+        // already-sanitized model value) in case the debounced input
+        // handler never fired — e.g. paste-then-immediately-submit.
+        currencyFieldnames.forEach(function (fieldname) {
+            if (!validateCurrencyField(fieldname) && !first_invalid_fieldname) {
+                first_invalid_fieldname = fieldname;
+            }
+        });
+
         if (first_invalid_fieldname) {
             var fd = frappe.web_form.fields_dict[first_invalid_fieldname];
             if (fd && fd.$wrapper && fd.$wrapper.length) {
@@ -423,6 +451,7 @@ frappe.ready(function () {
     if (!editToken) {
         frappe.web_form.save = function () {
             if (!validate_all_fields_inline()) return false;
+            if (!validateMandatoryDocuments()) return false;
             return original_save();
         };
     }
@@ -543,6 +572,13 @@ frappe.ready(function () {
        4. TYPE OF REQUEST -> LABELS + TREATMENT MANDATORY
     ========================================================= */
 
+    // milaap_campaign_link / milaap_recommendation are NOT fields on this
+    // web form (they're desk-only, filled in later by staff) — calling
+    // set_df_property on a fieldname this form doesn't have throws
+    // (Frappe's set_df_property has no null-guard on a missing field),
+    // which used to abort this whole handler before it reached the
+    // documents-loading call further down in the caller. Removed rather
+    // than guarded, since there's nothing here for them to actually do.
     function applyRequestTypeLabels(value) {
         if (value === 'Medical') {
             frappe.web_form.set_df_property('hospital_institution_name', 'label', 'Hospital Name');
@@ -550,8 +586,6 @@ frappe.ready(function () {
             frappe.web_form.set_df_property('ailment__course_details', 'label', 'Ailment Details');
             frappe.web_form.set_df_property('treatment', 'hidden', 0);
             frappe.web_form.set_df_property('treatment', 'reqd', 1);
-            frappe.web_form.set_df_property('milaap_campaign_link', 'hidden', 0);
-            frappe.web_form.set_df_property('milaap_recommendation', 'hidden', 0);
         } else if (value === 'Education') {
             frappe.web_form.set_df_property('hospital_institution_name', 'label', 'Institution Name');
             frappe.web_form.set_df_property('hospital_institution_location', 'label', 'Institution Location');
@@ -559,18 +593,12 @@ frappe.ready(function () {
             frappe.web_form.set_df_property('treatment', 'hidden', 1);
             frappe.web_form.set_df_property('treatment', 'reqd', 0);
             frappe.web_form.set_value('treatment', '');
-            frappe.web_form.set_df_property('milaap_campaign_link', 'hidden', 1);
-            frappe.web_form.set_df_property('milaap_recommendation', 'hidden', 1);
-            frappe.web_form.set_value('milaap_campaign_link', '');
-            frappe.web_form.set_value('milaap_recommendation', '');
         } else {
             frappe.web_form.set_df_property('hospital_institution_name', 'label', 'Hospital / Institution Name');
             frappe.web_form.set_df_property('hospital_institution_location', 'label', 'Hospital / Institution Location');
             frappe.web_form.set_df_property('ailment__course_details', 'label', 'Ailment / Course Details');
             frappe.web_form.set_df_property('treatment', 'hidden', 0);
             frappe.web_form.set_df_property('treatment', 'reqd', 0);
-            frappe.web_form.set_df_property('milaap_campaign_link', 'hidden', 0);
-            frappe.web_form.set_df_property('milaap_recommendation', 'hidden', 0);
         }
     }
 
@@ -847,6 +875,56 @@ frappe.ready(function () {
     });
 
     /* =========================================================
+       8b. CURRENCY FIELD VALIDATION
+       Frappe's Currency control silently nulls out non-numeric input at
+       get_value()/set_value() time, but the raw text a user typed (e.g.
+       "abc123") stays visible in the input with no feedback that it was
+       rejected — so a user can believe they entered an amount that was
+       actually discarded. Checked against the DOM input directly (not
+       the already-sanitized model value) so a genuine "abc" entry is
+       caught here rather than looking like an empty/valid field.
+    ========================================================= */
+
+    var currencyFieldnames = ['funds_requested', 'amount_already_spent', 'annual_family_income'];
+    var currencyRegex = /^\d*\.?\d*$/;
+
+    function validateCurrencyField(fieldname) {
+        var fd = frappe.web_form.fields_dict[fieldname];
+        if (!fd || !fd.$wrapper) return true;
+        var $input = fd.$wrapper.find('input').first();
+        var raw = ($input.val() || '').trim();
+
+        if (!raw) {
+            clearFieldError(fieldname);
+            return true;
+        }
+        // Strip thousands-separator commas before checking — Frappe's own
+        // Currency control reformats the display value with commas after
+        // blur/change (e.g. "2,000.00"), regardless of grouping style
+        // (lakhs/crore vs. Western), so comparing the raw digits/decimal
+        // point is what actually matters here, not the separators.
+        var withoutCommas = raw.replace(/,/g, '');
+        if (!currencyRegex.test(withoutCommas)) {
+            fieldError(fieldname, 'Please enter numbers only.');
+            return false;
+        }
+        clearFieldError(fieldname);
+        return true;
+    }
+
+    var debouncedCurrencyHandler = debounce(function (fieldname) {
+        validateCurrencyField(fieldname);
+    }, 500);
+
+    currencyFieldnames.forEach(function (fieldname) {
+        var fd = frappe.web_form.fields_dict[fieldname];
+        if (!fd || !fd.$wrapper) return;
+        fd.$wrapper.find('input').on('input', function () {
+            debouncedCurrencyHandler(fieldname);
+        });
+    });
+
+    /* =========================================================
        9. TITLE + LOGO SWAP
     ========================================================= */
 
@@ -899,14 +977,61 @@ frappe.ready(function () {
                         parent: frappe.web_form.doc.name,
                         idx: i + 1,
                         document_name: doc.name,
+                        is_mandatory: doc.is_mandatory ? 1 : 0,
                         __islocal: 1
                     };
                 });
                 field.df.data = built;
                 frappe.web_form.doc.supporting_documents = built;
                 grid.refresh();
+                markMandatoryDocumentRows();
             }
         });
+    }
+
+    // Visually flags rows whose document is mandatory — a small red
+    // "Required" label next to Document Name, since the grid itself has
+    // no built-in per-row conditional-mandatory styling for a plain Link
+    // column. Re-run after any grid refresh that could have added/changed
+    // rows (fresh load or edit-mode prefill).
+    function markMandatoryDocumentRows() {
+        var grid = frappe.web_form.fields_dict["supporting_documents"] &&
+                   frappe.web_form.fields_dict["supporting_documents"].grid;
+        if (!grid || !grid.grid_rows) return;
+        grid.grid_rows.forEach(function (grid_row) {
+            var row = grid_row.doc;
+            var $row_el = grid_row.row;
+            if (!$row_el) return;
+            // Marked via the row's own index column + a subtle background
+            // tint, not by injecting text into the Document Name cell —
+            // that pushed the cell's own text onto a second line and threw
+            // off the whole row's alignment. This keeps every column's
+            // layout untouched; a tooltip on the index column explains it.
+            $row_el.removeClass('sd-mandatory-row');
+            $row_el.find('.row-index').removeAttr('title').css('font-weight', '');
+            if (row && row.is_mandatory) {
+                $row_el.addClass('sd-mandatory-row');
+                $row_el.find('.row-index').attr('title', 'This document is required').css('font-weight', '700');
+            }
+        });
+    }
+
+    // Mandatory-document check before submit: every row flagged
+    // is_mandatory must have an attachment, shown inline the same way as
+    // the other field-level checks on this form rather than a popup.
+    function validateMandatoryDocuments() {
+        var grid = frappe.web_form.fields_dict["supporting_documents"] &&
+                   frappe.web_form.fields_dict["supporting_documents"].grid;
+        var rows = (grid && grid.get_data()) || frappe.web_form.doc.supporting_documents || [];
+        var missing = rows.filter(function (r) { return r.is_mandatory && !r.attachment; });
+        if (missing.length) {
+            fieldError('supporting_documents',
+                'Please attach all mandatory documents: ' +
+                missing.map(function (r) { return r.document_name; }).join(', '));
+            return false;
+        }
+        clearFieldError('supporting_documents');
+        return true;
     }
 
     /* =========================================================
@@ -936,6 +1061,7 @@ frappe.ready(function () {
                 frappe.msgprint('Please verify your email with the code sent to you before saving.');
                 return false;
             }
+            if (!validateMandatoryDocuments()) return false;
 
             var values = {};
             frappe.web_form.fields.forEach(function (df) {

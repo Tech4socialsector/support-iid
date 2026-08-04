@@ -317,9 +317,14 @@ frappe.ready(function () {
                 if (!r.message) return;
                 decryptResponse(r.message).then(function (data) {
                     if (data && data.case_status) {
+                        // The stored value stays "Sent Back" everywhere it's
+                        // used as data (filters, comparisons) — only the
+                        // text actually shown to a user gets the friendlier
+                        // "Pending with Requester" wording.
+                        var displayStatus = data.case_status === 'Sent Back' ? 'Pending with Requester' : data.case_status;
                         var statusText = data.case_status === 'Pending Approval' && data.current_approval_level
-                            ? data.case_status + ' (' + data.current_approval_level + ')'
-                            : data.case_status;
+                            ? displayStatus + ' (' + data.current_approval_level + ')'
+                            : displayStatus;
                         frappe.show_alert({
                             message: 'Case updated to: ' + statusText,
                             indicator: 'green'

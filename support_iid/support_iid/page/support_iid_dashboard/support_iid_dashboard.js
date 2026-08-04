@@ -37,14 +37,23 @@ function status_color(status) {
 	if (status.indexOf('Pending Approval') === 0) return 'orange';
 	return 'blue';
 }
+// The stored case_status value stays "Sent Back" (Link value, used in
+// filters/data/comparisons everywhere) — this is the one place that
+// value should actually show something friendlier to a user: "Pending
+// with Requester" instead of the more passive "Sent Back".
+const STATUS_DISPLAY_LABELS = { 'Sent Back': 'Pending with Requester' };
+function status_display_label(status) {
+	return STATUS_DISPLAY_LABELS[status] || status;
+}
 // Case Status is a fixed Link value ("Pending Approval") with the current
 // approval level tracked separately — this composes the two back into one
 // display string, e.g. "Pending Approval (L1 Reviewer)".
 function display_status(c) {
+	var label = status_display_label(c.case_status);
 	if ((c.case_status === 'Pending Approval' || c.case_status === 'Sent Back') && c.current_approval_level) {
-		return `${c.case_status} (${c.current_approval_level})`;
+		return `${label} (${c.current_approval_level})`;
 	}
-	return c.case_status || '';
+	return label || '';
 }
 const STATUS_HEX = {
 	gray: '#9aa1a8', blue: '#2490ef', orange: '#e29a3d',
@@ -87,8 +96,8 @@ function icon(name, size) {
 
 function get_current_stage(doc) {
 	// Only "Pending Approval" cases have a stage genuinely awaiting
-	// action. Any other case_status (Sent Back, Rejected, Approved, On
-	// Hold, Closed) means no approver should see a Take Action button —
+	// action. Any other case_status (Sent Back, Rejected,
+	// Approved, On Hold, Closed) means no approver should see a Take Action button —
 	// even though a LATER stage's own row may still carry a blank status
 	// simply because it was never reached yet (e.g. stage 3 when the
 	// case was sent back at stage 1). Without this check, scanning stage
@@ -285,14 +294,14 @@ class SupportIIDDashboard {
 			   (a 2-line label like "Sent Back for Revision" + a value +
 			   a sub line) — content is never clipped, just given a
 			   consistent floor so shorter cards don't look tiny next to it. */
-			.sd-metrics-grid { display:grid; grid-template-columns:repeat(auto-fill, 400px); gap:16px; align-items:stretch; }
+			.sd-metrics-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:16px; align-items:stretch; }
 			/* Plain neutral cards — no per-card accent colors, just a clean
 			   white card with a subtle lift on hover. Wide and short,
 			   matching a compact dashboard-summary-card look. */
 			.sd-metric-card {
 				background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px;
-				padding:16px 20px 14px; cursor:pointer; transition:box-shadow .16s, transform .16s;
-				width:400px; max-width:100%; min-height:104px; display:flex; flex-direction:column;
+				padding:12px 14px 10px; cursor:pointer; transition:box-shadow .16s, transform .16s;
+				width:100%; min-height:76px; display:flex; flex-direction:column;
 				box-shadow:0 1px 2px rgba(15,23,32,.04);
 			}
 			.sd-metric-card:hover { box-shadow:0 8px 20px rgba(15,23,32,.09); transform:translateY(-2px); }
@@ -342,19 +351,24 @@ class SupportIIDDashboard {
 			[data-tooltip]:hover::after, [data-tooltip]:hover::before { opacity:1; }
 
 			/* indicator-pill override inside the case detail view —
-			   matches the design specification in the request */
+			   matches the design specification in the request. height:auto
+			   (not a fixed px height) so longer combined text like "Pending
+			   with Requester (L2)" doesn't wrap and clip/overlap inside a
+			   box too short for its own second line — same fix applied on
+			   the Case Registry table's status pills. */
 			#sd-detail-view .indicator-pill, #sd-detail-view .indicator-pill-right {
 				font-size:12px; font-weight:400; letter-spacing:.02em;
-				padding:0.5px 8px; border-radius:9999px; height:22px;
+				padding:2.5px 8px; border-radius:9999px; height:auto; min-height:22px;
 				display:inline-flex; align-items:center; box-shadow:none !important;
+				white-space:nowrap; max-width:none;
 			}
 			.sd-metric-icon {
-				width:24px; height:24px; border-radius:6px; background:#f0f1f3; color:#5a6068;
-				display:flex; align-items:center; justify-content:center; font-size:13px; margin-bottom:6px;
+				width:20px; height:20px; border-radius:5px; background:#f0f1f3; color:#5a6068;
+				display:flex; align-items:center; justify-content:center; font-size:11px; margin-bottom:4px;
 			}
-			.sd-metric-label { font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:4px; }
-			.sd-metric-value { font-size:24px; font-weight:700; color:#1a1a1a; line-height:1.2; }
-			.sd-metric-sub { font-size:12.5px; color:var(--text-muted,#8d99a6); margin-top:4px; }
+			.sd-metric-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:2px; }
+			.sd-metric-value { font-size:20px; font-weight:700; color:#1a1a1a; line-height:1.2; }
+			.sd-metric-sub { font-size:11.5px; color:var(--text-muted,#8d99a6); margin-top:2px; }
 
 			.sd-chart-panel { background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px; padding:20px 22px; }
 			.sd-chart-title { font-size:13px; font-weight:700; margin-bottom:16px; color:#1a1a1a; }
@@ -518,15 +532,15 @@ class SupportIIDDashboard {
 				<div class="sd-filter-bar">
 					<div class="sd-filter-grid">
 						<div class="sd-filter-item">
-							<label>Source of Request</label>
-							<select id="sd-f-source" class="form-control">
-								<option value="">All sources</option>
-								<option>Field State</option>
-								<option>Philanthropy member</option>
-								<option>Health operations</option>
-								<option>Referred by partner</option>
-								<option>Email</option>
-								<option>Letter</option>
+							<label>Type of Request</label>
+							<select id="sd-f-type" class="form-control">
+								<option value="">All types</option>
+							</select>
+						</div>
+						<div class="sd-filter-item">
+							<label>Status</label>
+							<select id="sd-f-status" class="form-control">
+								<option value="">All statuses</option>
 							</select>
 						</div>
 						<div class="sd-filter-item">
@@ -556,14 +570,11 @@ class SupportIIDDashboard {
 					</div>
 				</div>
 
-				<div class="sd-section-heading">Case Status Overview</div>
+				<div class="sd-section-heading">Case Overview</div>
 				<div class="sd-metrics-grid" id="sd-metrics-status"></div>
 
 				<div class="sd-section-heading" style="margin-top:22px">Financial Summary</div>
 				<div class="sd-metrics-grid" id="sd-metrics-financial"></div>
-
-				<div class="sd-section-heading" style="margin-top:22px">Types of Request</div>
-				<div class="sd-metrics-grid" id="sd-metrics-types"></div>
 
 				<div class="sd-trend-section">
 					<div class="sd-trend-section-head">
@@ -598,21 +609,38 @@ class SupportIIDDashboard {
 
 		frappe.db.get_list('Type of Request List', { fields: ['name'], limit_page_length: 0 })
 			.then((rows) => {
-				// Cached for the "Types of Request" metric card — built from
-				// whatever entries actually exist in this master doctype,
-				// not a hardcoded Medical/Education list, so a new type
-				// added here shows up on the dashboard automatically.
+				var sel = this.wrapper.find('#sd-f-type');
+				(rows || []).forEach((r) => {
+					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(r.name)}</option>`);
+				});
+				sel.append('<option value="Others">Others</option>');
+
+				// Cached in case anything else needs the known-types list —
+				// built from whatever entries actually exist in this master
+				// doctype, not a hardcoded Medical/Education list, so a new
+				// type added here shows up automatically.
 				this.request_types = (rows || []).map((r) => r.name);
 				this.render_metrics();
 			});
 
 		frappe.db.get_list('Case Status List', { fields: ['name'], limit_page_length: 0 })
 			.then((rows) => {
-				// Cached for the "Case Status Overview" cards — same idea:
-				// one card per status that actually exists in Case Status
-				// List, so adding a new status there is enough to get a
-				// matching card, no code change needed.
+				var sel = this.wrapper.find('#sd-f-status');
+				(rows || []).forEach((r) => {
+					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(status_display_label(r.name))}</option>`);
+				});
 				this.case_statuses = (rows || []).map((r) => r.name);
+				this.render_metrics();
+			});
+
+		frappe.db.get_list('Source of Request List', { fields: ['name'], order_by: 'sequence_id asc', limit_page_length: 0 })
+			.then((rows) => {
+				// Cached for the "Source of Request" cards — one card per
+				// source actually in Source of Request List, so adding a new
+				// source there is enough to get a matching card, no code
+				// change needed. No longer a filter dropdown — replaced by
+				// clicking through to the drilldown from each card instead.
+				this.request_sources = (rows || []).map((r) => r.name);
 				this.render_metrics();
 			});
 	}
@@ -675,11 +703,11 @@ class SupportIIDDashboard {
 			self.test_mode = $(this).is(':checked');
 			self.load_data();
 		});
-		this.wrapper.on('change', '#sd-f-source, #sd-f-state, #sd-f-district', function () {
+		this.wrapper.on('change', '#sd-f-type, #sd-f-status, #sd-f-state, #sd-f-district', function () {
 			self.apply_filters();
 		});
 		this.wrapper.on('click', '#sd-f-clear', function () {
-			self.wrapper.find('#sd-f-source, #sd-f-state, #sd-f-district').val('');
+			self.wrapper.find('#sd-f-type, #sd-f-status, #sd-f-state, #sd-f-district').val('');
 			self.from_control.set_value('');
 			self.upto_control.set_value('');
 			self.apply_filters();
@@ -712,14 +740,21 @@ class SupportIIDDashboard {
 	}
 
 	apply_filters() {
-		var source = this.wrapper.find('#sd-f-source').val();
+		var type = this.wrapper.find('#sd-f-type').val();
+		var request_types = this.request_types || [];
+		var status = this.wrapper.find('#sd-f-status').val();
 		var district = (this.wrapper.find('#sd-f-district').val() || '').trim().toLowerCase();
 		var state = (this.wrapper.find('#sd-f-state').val() || '').trim().toLowerCase();
 		var from_date = this.from_control ? this.from_control.get_value() : '';
 		var upto = this.upto_control ? this.upto_control.get_value() : '';
 
 		this.rows = (this.all_rows || []).filter((c) => {
-			if (source && c.source_of_request !== source) return false;
+			if (type === 'Others') {
+				if (request_types.indexOf(c.type_of_request) !== -1) return false;
+			} else if (type && c.type_of_request !== type) {
+				return false;
+			}
+			if (status && c.case_status !== status) return false;
 			if (district && (c.district || '').toLowerCase().indexOf(district) === -1) return false;
 			if (state && (c.state || '').toLowerCase().indexOf(state) === -1) return false;
 			if (from_date && c.request_date && c.request_date < from_date) return false;
@@ -738,60 +773,53 @@ class SupportIIDDashboard {
 		var self = this;
 
 		var approved_rows = rows.filter((c) => c.case_status === 'Approved');
+		var declined_rows = rows.filter((c) => c.case_status === 'Rejected');
+		var disbursed_rows = rows.filter((c) => c.status_of_milaap_transfer === 'Fully Disbursed');
 		var total_approved_value = approved_rows.reduce((s, c) => s + case_amount(c), 0);
 		var total_requested_value = rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
+		var total_declined_value = declined_rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
+		// Fully Disbursed only — Partially Disbursed cases don't record how
+		// much of the approved amount actually went out, so including them
+		// against the full approved_amount would overstate what was
+		// actually disbursed.
+		var total_disbursed_value = disbursed_rows.reduce(
+			(s, c) => s + Math.max(0, case_amount(c) - (c.refund_amount_if_any || 0)), 0
+		);
 		var in_progress_rows = rows.filter((c) => is_in_progress(c.case_status));
-
-		var by_category = {};
-		approved_rows.forEach((c) => {
-			var k = c.type_of_request || 'Other';
-			by_category[k] = (by_category[k] || 0) + case_amount(c);
-		});
-		var category_summary = Object.keys(by_category).map((k) => k + ': ' + format_currency(by_category[k])).join(' · ') || 'No approved cases yet';
 
 		var financial_cards = [
 			{
-				icon: '₹', label: 'Total Support IID Requests Supported', value: format_currency(total_approved_value),
-				sub: approved_rows.length + ' approved case(s)',
-				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
-			},
-			{
-				icon: icon('barChart', 18), label: 'Total Funds Requested (Pipeline)', value: format_currency(total_requested_value),
+				icon: icon('barChart', 18), label: 'Total Requested Amount', value: format_currency(total_requested_value),
 				sub: rows.length + ' total case(s)',
 				click: () => self.open_drilldown('All cases', () => true)
 			},
 			{
-				icon: icon('tag', 18), label: 'Approval Amount by Category',
-				value: format_currency(total_approved_value),
-				subHtml: Object.keys(by_category).length
-					? Object.keys(by_category).map((k) => `<span style="display:block;font-size:11.5px;color:#5a6068"><b>${frappe.utils.escape_html(k)}:</b> ${format_currency(by_category[k])}</span>`).join('')
-					: '<span style="color:var(--text-muted,#8d99a6);font-style:italic">No approved cases yet</span>',
+				icon: '₹', label: 'Total Approved Amount', value: format_currency(total_approved_value),
+				sub: approved_rows.length + ' approved case(s)',
 				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
+			},
+			{
+				icon: icon('xCircle', 18), label: 'Total Declined Amount', value: format_currency(total_declined_value),
+				sub: declined_rows.length + ' declined case(s)',
+				click: () => self.open_drilldown('Declined cases', (c) => c.case_status === 'Rejected')
+			},
+			{
+				icon: icon('checkCircle', 18), label: 'Total Disbursed Amount', value: format_currency(total_disbursed_value),
+				sub: disbursed_rows.length + ' fully disbursed case(s)',
+				click: () => self.open_drilldown('Fully disbursed cases', (c) => c.status_of_milaap_transfer === 'Fully Disbursed')
 			}
 		];
 
-		// "Total Cases" and "Cases In Progress" are fixed summary cards
-		// (not single Case Status List entries — In Progress rolls up every
-		// non-terminal status). Every other card here is generated straight
-		// from whatever statuses currently exist in Case Status List, so
-		// adding a new status there is enough to get a matching card —
-		// no code change needed. Icon/status-color reuse the same mapping
-		// already used for the status pill elsewhere on this page.
-		var STATUS_ICON = {
-			'Approved': 'checkCircle', 'Rejected': 'xCircle', 'On Hold': 'pauseCircle',
-			'Sent Back': 'cornerUpLeft', 'Pending Approval': 'clock', 'Closed': 'checkCircle'
-		};
-		var status_list = (this.case_statuses && this.case_statuses.length)
-			? this.case_statuses
-			: ['Pending Approval', 'Approved', 'Rejected', 'Sent Back', 'On Hold', 'Closed'];
+		// Status is now a filter dropdown above instead of its own cards —
+		// this section instead leads with Total Cases / Cases In Progress,
+		// then one card per source actually in Source of Request List, so
+		// adding a new source there is enough to get a matching card, no
+		// code change needed.
+		var source_list = (this.request_sources && this.request_sources.length) ? this.request_sources : [];
 
 		var status_cards = [
 			{
 				icon: icon('list', 18), label: 'Total Cases', value: rows.length,
-				// Kept short and one-line on purpose — every status already
-				// has its own card in this same row, so a full breakdown
-				// here was pure repetition and, being unbounded in length,
-				// made this card grow taller than the rest of the row.
 				sub: 'across all statuses',
 				click: () => self.open_drilldown('All cases', () => true)
 			},
@@ -800,33 +828,17 @@ class SupportIIDDashboard {
 				sub: 'awaiting review, approval, or action',
 				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status))
 			}
-		].concat(status_list.map((status) => {
-			var status_rows = rows.filter((c) => c.case_status === status);
-			var sub = status === 'Approved' ? format_currency(total_approved_value) + ' approved'
-				: status_rows.length + ' case(s)';
+		].concat(source_list.map((source) => {
+			var source_rows = rows.filter((c) => c.source_of_request === source);
 			return {
-				icon: icon(STATUS_ICON[status] || 'tag', 18), label: status, value: status_rows.length,
-				sub: sub,
-				click: () => self.open_drilldown(status + ' cases', (c) => c.case_status === status)
+				icon: icon('tag', 18), label: source, value: source_rows.length,
+				sub: source_rows.length + ' case(s)',
+				click: () => self.open_drilldown(source + ' cases', (c) => c.source_of_request === source)
 			};
 		}));
 
-		var type_list = (this.request_types && this.request_types.length) ? this.request_types : [];
-		// One card per type actually in Type of Request List (e.g. Medical,
-		// Education), each showing its own case count — adding a new type
-		// there is enough to get a matching card, no code change needed.
-		var type_cards = type_list.map((t) => {
-			var type_rows = rows.filter((c) => c.type_of_request === t);
-			return {
-				icon: icon('tag', 18), label: t, value: type_rows.length,
-				sub: type_rows.length + ' case(s)',
-				click: () => self.open_drilldown(t + ' cases', (c) => c.type_of_request === t)
-			};
-		});
-
 		this.render_metric_group('#sd-metrics-financial', financial_cards);
 		this.render_metric_group('#sd-metrics-status', status_cards);
-		this.render_metric_group('#sd-metrics-types', type_cards);
 	}
 
 	render_metric_group(selector, cards) {
@@ -1272,6 +1284,13 @@ class SupportIIDDashboard {
 				show_detail_mode(updated_doc);
 			});
 		});
+		modal.on('click', '.sd-close-case-open', function (e) {
+			e.preventDefault();
+			if (!current_detail_doc) return;
+			self.open_close_case_modal(current_detail_doc, function (updated_doc) {
+				show_detail_mode(updated_doc);
+			});
+		});
 		$(document).on('keydown.sd-modal', function (e) {
 			if (e.key === 'Escape') { modal.remove(); $(document).off('keydown.sd-modal'); }
 		});
@@ -1381,16 +1400,125 @@ class SupportIIDDashboard {
 		$('body').append(modal);
 	}
 
+	// ---------------- Close Case (Reviewer / admin, Approved cases only) ----------------
+
+	open_close_case_modal(doc, onDone) {
+		$('.sd-close-modal-backdrop').remove();
+		var self = this;
+
+		var modal = $(`
+			<div class="sd-modal-backdrop sd-close-modal-backdrop" style="z-index:1300">
+				<div class="sd-modal" style="max-width:520px">
+					<div class="sd-modal-header">
+						<div class="sd-modal-header-left"><div class="sd-modal-title">Close Case</div></div>
+						<div class="sd-modal-header-right"><button class="sd-modal-close" aria-label="Close" data-tooltip="Close">&times;</button></div>
+					</div>
+					<div class="sd-modal-body sd-modal-body-padded sd-action-modal-body">
+						<div style="margin-bottom:14px">
+							<label>Date of Transfer</label>
+							<div style="font-weight:600;font-size:14.5px">${frappe.datetime.str_to_user(frappe.datetime.get_today())}</div>
+						</div>
+						<div style="margin-bottom:14px">
+							<label>Approved Amount <span style="color:#c0392b">*</span></label>
+							<input type="number" step="0.01" class="form-control" id="sd-close-approved-amount" value="${doc.approved_amount || ''}">
+							<div class="field-error-msg" id="sd-close-amount-error" style="display:none;color:#c0392b;font-size:12px;margin-top:4px"></div>
+						</div>
+						<div style="margin-bottom:14px">
+							<label>UTR Details</label>
+							<input type="text" class="form-control" id="sd-close-utr" value="${frappe.utils.escape_html(doc.utr_details || '')}">
+						</div>
+						<div style="margin-bottom:14px">
+							<label>Milaap Recommendation</label>
+							<textarea class="form-control" id="sd-close-milaap-recommendation" rows="3">${frappe.utils.escape_html(doc.milaap_recommendation || '')}</textarea>
+						</div>
+						<div style="margin-bottom:0">
+							<label>Milaap Campaign Link</label>
+							<input type="text" class="form-control" id="sd-close-milaap-link" value="${frappe.utils.escape_html(doc.milaap_campaign_link || '')}">
+						</div>
+						<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">
+							<button class="btn btn-default btn-sm" id="sd-close-cancel">Cancel</button>
+							<button class="btn btn-sm btn-primary" id="sd-close-submit">Close Case</button>
+						</div>
+					</div>
+				</div>
+			</div>
+		`);
+
+		modal.on('click', function (e) { if (e.target === this) modal.remove(); });
+		modal.find('.sd-modal-close, #sd-close-cancel').on('click', function () { modal.remove(); });
+
+		$('body').append(modal);
+
+		modal.find('#sd-close-submit').on('click', function () {
+			var amount = modal.find('#sd-close-approved-amount').val();
+			if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+				modal.find('#sd-close-amount-error').text('Approved Amount is required.').show();
+				return;
+			}
+			var payload = {
+				approved_amount: amount,
+				utr_details: modal.find('#sd-close-utr').val(),
+				milaap_recommendation: modal.find('#sd-close-milaap-recommendation').val(),
+				milaap_campaign_link: modal.find('#sd-close-milaap-link').val()
+			};
+			modal.remove();
+			self.submit_close_case(doc, payload, onDone);
+		});
+	}
+
+	submit_close_case(doc, payload, onDone) {
+		var self = this;
+
+		if (self.test_mode) {
+			doc.case_status = 'Closed';
+			doc.date_of_transfer = frappe.datetime.get_today();
+			doc.approved_amount = payload.approved_amount ? parseFloat(payload.approved_amount) : doc.approved_amount;
+			doc.utr_details = payload.utr_details;
+			doc.milaap_recommendation = payload.milaap_recommendation;
+			doc.milaap_campaign_link = payload.milaap_campaign_link;
+			frappe.show_alert({ message: 'Case closed (sample data — not saved).', indicator: 'green' });
+			onDone(doc);
+			return;
+		}
+
+		frappe.call({
+			method: 'support_iid.case_management.doctype.case_register.case_register.close_case',
+			args: Object.assign({ case_name: doc.name }, payload),
+			freeze: true,
+			freeze_message: 'Closing case...',
+			callback: function (r) {
+				if (!r || !r.message) return;
+				frappe.show_alert({ message: 'Case closed.', indicator: 'green' });
+				frappe.call({
+					method: 'frappe.client.get',
+					args: { doctype: 'Case Register', name: doc.name },
+					callback: function (r2) { if (r2 && r2.message) onDone(r2.message); }
+				});
+			}
+		});
+	}
+
 	// ---------------- Case detail markup (rendered inline into the drill-down modal) ----------------
 
 	build_action_control_html(doc) {
+		var user = frappe.session.user;
+		var is_admin = this.test_mode ||
+			user === 'Administrator' ||
+			(frappe.user_roles || []).indexOf('System Manager') > -1;
+		var can_close = is_admin || (frappe.user_roles || []).indexOf('Reviewer') > -1;
+
+		if (doc.case_status === 'Approved') {
+			if (!can_close) return '';
+			return `
+				<button type="button" class="btn btn-primary btn-sm sd-close-case-open" data-tooltip="Record transfer details and close this case">
+					${icon('checkCircle', 13)} Close Case
+				</button>`;
+		}
+
 		var current = get_current_stage(doc);
 		if (!current) return '';
 
-		var user = frappe.session.user;
-		var can_act = this.test_mode ||
-			user === 'Administrator' ||
-			(frappe.user_roles || []).indexOf('System Manager') > -1 ||
+		var can_act = is_admin ||
 			(frappe.user_roles || []).indexOf('Support IID Approver') > -1 ||
 			(current.stage.approver_email || '').toLowerCase() === user.toLowerCase();
 

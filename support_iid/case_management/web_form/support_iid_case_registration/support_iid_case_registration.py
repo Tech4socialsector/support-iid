@@ -23,10 +23,11 @@ def get_document_types(type_of_request):
         if matching:
             documents.append({
                 "name": doc.name,
-                "type_of_request_list": matching
+                "type_of_request_list": matching,
+                "is_mandatory": doc.is_mandatory,
             })
 
-    return documents   
+    return documents
 
 
 

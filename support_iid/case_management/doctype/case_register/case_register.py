@@ -59,6 +59,21 @@ CASE_STATUS_PENDING  = "Pending Approval"
 CASE_STATUS_APPROVED = "Approved"
 CASE_STATUS_REJECTED = "Rejected"
 CASE_STATUS_SENT_BACK = "Sent Back"
+CASE_STATUS_CLOSED   = "Closed"
+CASE_STATUS_WITHDRAWN = "Withdrawn by the Requester"
+
+# Display-only relabeling — the stored case_status value (Link to Case
+# Status List, used in filters/reports/data everywhere) stays "Sent Back"
+# for data consistency, but anywhere it's actually shown to a user it
+# should read "Pending with Requester" instead — clearer about whose turn
+# it is to act than the more passive "Sent Back".
+CASE_STATUS_DISPLAY_LABELS = {
+    CASE_STATUS_SENT_BACK: "Pending with Requester",
+}
+
+
+def case_status_display_label(status):
+    return CASE_STATUS_DISPLAY_LABELS.get(status, status)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Response encryption — every endpoint that returns real case data (name,
@@ -117,6 +132,22 @@ def make_edit_token(case_name, requestor_email, stage_idx):
     return base64.urlsafe_b64encode(encrypted.encode()).decode()
 
 
+def make_withdraw_token(case_name, requestor_email):
+    """
+    Token for the "withdraw this case" link sent with the requestor
+    acknowledgement email — proves the holder is the requestor for this
+    exact case, same as make_edit_token but with no approval stage tied
+    to it (withdrawal isn't specific to any one stage).
+    """
+    payload = json.dumps({
+        "purpose":         "withdraw",
+        "case_name":       case_name,
+        "requestor_email": (requestor_email or "").strip().lower(),
+    })
+    encrypted = frappe_encrypt(payload)
+    return base64.urlsafe_b64encode(encrypted.encode()).decode()
+
+
 def _read_token(token):
     """Returns the decoded payload dict, or None if the token is missing/invalid."""
     if not token:
@@ -139,6 +170,13 @@ def read_approval_token(token):
 def read_edit_token(token):
     payload = _read_token(token)
     if not payload or payload.get("purpose") != "edit":
+        return None
+    return payload
+
+
+def read_withdraw_token(token):
+    payload = _read_token(token)
+    if not payload or payload.get("purpose") != "withdraw":
         return None
     return payload
 
@@ -189,18 +227,20 @@ def send_approval_otp(token):
             lines=[
                 f"Dear {approver_name},",
                 "",
-                "Please use the following One-Time Password (OTP) to verify your "
-                "identity and proceed with the Support IID case approval action:",
+                "This is an official communication from the Support IID program "
+                "at Azim Premji Foundation. Kindly use the One-Time Password "
+                "(OTP) provided below to verify your identity and proceed with "
+                "the case approval action:",
                 "",
                 f"{{{{code:{otp}}}}}",
                 "",
-                "This code is valid for 10 minutes and can be used only once. "
-                "Please do not share this code with anyone.",
+                "This code is valid for 10 minutes and may be used only once. "
+                "We request that you do not share this code with anyone.",
                 "",
-                "If you did not request this code, no action is required — you "
-                "may safely disregard this email.",
+                "If you did not request this code, no action is required on "
+                "your part — you may safely disregard this email.",
                 "",
-                "Regards,",
+                "Warm regards,",
                 "Support IID Team",
             ],
         )
@@ -237,24 +277,75 @@ def send_edit_otp(token):
             lines=[
                 f"Dear {requestor_name},",
                 "",
-                "Please use the following One-Time Password (OTP) to verify your "
-                "identity and proceed with editing and resubmitting your Support "
-                "IID case:",
+                "This is an official communication from the Support IID program "
+                "at Azim Premji Foundation. Kindly use the One-Time Password "
+                "(OTP) provided below to verify your identity and proceed with "
+                "editing and resubmitting your case:",
                 "",
                 f"{{{{code:{otp}}}}}",
                 "",
-                "This code is valid for 10 minutes and can be used only once. "
-                "Please do not share this code with anyone.",
+                "This code is valid for 10 minutes and may be used only once. "
+                "We request that you do not share this code with anyone.",
                 "",
-                "If you did not request this code, no action is required — you "
-                "may safely disregard this email.",
+                "If you did not request this code, no action is required on "
+                "your part — you may safely disregard this email.",
                 "",
-                "Regards,",
+                "Warm regards,",
                 "Support IID Team",
             ],
         )
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Edit OTP email failed")
+        frappe.throw("Could not send the verification code. Please try again shortly.")
+
+    return {"sent": True}
+
+
+@frappe.whitelist(allow_guest=True)
+def send_withdraw_otp(token):
+    """
+    Same as send_edit_otp, but for the "withdraw this case" flow — sends
+    the OTP to the token-bound requestor_email.
+    """
+    payload = read_withdraw_token(token)
+    if not payload:
+        frappe.throw("This withdraw link is invalid or has expired.")
+
+    requestor_email = payload.get("requestor_email")
+    if not requestor_email:
+        frappe.throw("This withdraw link is invalid or has expired.")
+
+    otp = f"{secrets.randbelow(1_000_000):06d}"
+    frappe.cache().set_value(_otp_cache_key(token), otp, expires_in_sec=_OTP_TTL_SECONDS)
+
+    requestor_name = frappe.db.get_value("Case Register", payload.get("case_name"), "requestor_name") or "Team"
+
+    try:
+        _send_plain_email(
+            recipients=[requestor_email],
+            subject="Support IID Case Withdrawal - Your Verification Code",
+            lines=[
+                f"Dear {requestor_name},",
+                "",
+                "This is an official communication from the Support IID program "
+                "at Azim Premji Foundation. Kindly use the One-Time Password "
+                "(OTP) provided below to verify your identity and proceed with "
+                "withdrawing your case:",
+                "",
+                f"{{{{code:{otp}}}}}",
+                "",
+                "This code is valid for 10 minutes and may be used only once. "
+                "We request that you do not share this code with anyone.",
+                "",
+                "If you did not request this code, no action is required on "
+                "your part — you may safely disregard this email.",
+                "",
+                "Warm regards,",
+                "Support IID Team",
+            ],
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), "Withdraw OTP email failed")
         frappe.throw("Could not send the verification code. Please try again shortly.")
 
     return {"sent": True}
@@ -330,6 +421,14 @@ def verify_approval_otp(token, otp):
 @frappe.whitelist(allow_guest=True)
 def verify_edit_otp(token, otp):
     """Explicit "Verify" step for the case-edit web form's OTP."""
+    if not _verify_and_consume_otp(token, otp):
+        frappe.throw("Invalid or expired verification code. Please request a new one and try again.")
+    return {"verify_ticket": _issue_verify_ticket(token)}
+
+
+@frappe.whitelist(allow_guest=True)
+def verify_withdraw_otp(token, otp):
+    """Explicit "Verify" step for the case-withdraw web form's OTP."""
     if not _verify_and_consume_otp(token, otp):
         frappe.throw("Invalid or expired verification code. Please request a new one and try again.")
     return {"verify_ticket": _issue_verify_ticket(token)}
@@ -763,24 +862,28 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
     ]):
         story.append(Paragraph(line, st["addr"]))
 
-    # Salutation + intro
+    # Intro — this document is a case summary FOR REVIEW (addressed to the
+    # approver/reviewer reading it), describing a request submitted on
+    # behalf of the beneficiary named below. It is not a letter to the
+    # beneficiary, so it's written in third person rather than "Dear
+    # <beneficiary>, ...your request".
     story += [
         Spacer(1, 6),
-        Paragraph(f"Dear {fgt('beneficiary_name')},", st["sal"]),
+        Paragraph("Beneficiary Details", st["sal"]),
         Spacer(1, 4),
         Paragraph(
             "This document is the official case summary for the support request registered "
-            "with the Support IID Case Management System, Azim Premji Foundation. "
-            "All details below are submitted for review and provisional approval.",
+            f"on behalf of {fgt('beneficiary_name') or 'the beneficiary'} with the Support IID Case Management "
+            "System, Azim Premji Foundation. All details below are submitted for review and provisional approval.",
             st["normal"],
         ),
-        Paragraph("The terms of your support request are as under:", st["normal"]),
+        Paragraph("The terms of the support request are as under:", st["normal"]),
         Spacer(1, 8),
     ]
 
     # A — Case Information
-    case_status_display = fgt("case_status")
-    if case_status_display == CASE_STATUS_PENDING and fgt("current_approval_level"):
+    case_status_display = case_status_display_label(fgt("case_status"))
+    if fgt("case_status") == CASE_STATUS_PENDING and fgt("current_approval_level"):
         case_status_display = f"{case_status_display} ({fgt('current_approval_level')})"
 
     story += sec("A", "CASE INFORMATION")
@@ -792,7 +895,6 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
         ("Source of Request", fgt("source_of_request")),
         ("Department",        fgt("department")),
         ("Work Location",     fgt("work_location")),
-        ("Function / Unit",   fgt("function")),
     ]))
     story.append(Spacer(1, 10))
 
@@ -1222,7 +1324,8 @@ class CaseRegister(Document):
             subject    = f"Case Approved - [{self.name}] - {beneficiary}"
             heading    = "**Your case has been approved.**"
             body_extra = (
-                f"Congratulations! The support request has been approved by "
+                f"Congratulations! This is the final level of approval, and "
+                f"the support request has been approved by "
                 f"**{approver_name or 'the review team'}**. The team will be in "
                 f"touch regarding disbursement details."
             )
@@ -1287,7 +1390,6 @@ class CaseRegister(Document):
 
         requestor_name = getattr(self, "requestor_name", None) or "Team"
         beneficiary    = getattr(self, "beneficiary_name", None) or ""
-        case_url = f"{get_url()}/desk/case-registry#{self.name}"
 
         stages = self.get("case_approval_stage") or []
         level_label = (
@@ -1295,6 +1397,9 @@ class CaseRegister(Document):
         ) or "Level 1"
 
         subject = f"Case Received - [{self.name}] - {beneficiary}"
+
+        withdraw_token = make_withdraw_token(self.name, requestor_email)
+        withdraw_url = f"{get_url()}/support-iid-case-withdraw/new?token={withdraw_token}"
 
         lines = [
             f"Dear {requestor_name},",
@@ -1307,7 +1412,9 @@ class CaseRegister(Document):
             "",
             "A copy of the case summary is attached for your records.",
             "",
-            f"[View Case]({case_url})",
+            "If you no longer need this request, you can withdraw it at any "
+            "time before a final decision is made:",
+            f"[Withdraw this case]({withdraw_url})",
             "",
             "Regards,",
             "Support IID Team",
@@ -1330,6 +1437,59 @@ class CaseRegister(Document):
             frappe.log_error(
                 frappe.get_traceback(),
                 f"Requestor acknowledgement failed — {self.name}",
+            )
+
+    # ── Requestor resubmit acknowledgement email  (sent after an edit-and-
+    #    resubmit following Send Back) ──────────────────────────────────────
+
+    def _send_requestor_resubmit_acknowledgement_email(self, level_label=None):
+        """
+        Plain-text acknowledgement to the requestor confirming their edits
+        were received and the case has been resubmitted for approval —
+        every action on a case should have a matching confirmation back to
+        the requestor, and until now a resubmit after Send Back only
+        notified the approver, leaving the requestor with no confirmation
+        their update actually went through.
+        """
+        requestor_email = getattr(self, "requestor_email", None) or ""
+        if not requestor_email:
+            return
+
+        requestor_name = getattr(self, "requestor_name", None) or "Team"
+        beneficiary    = getattr(self, "beneficiary_name", None) or ""
+
+        subject = f"Case Updates Submitted - [{self.name}] - {beneficiary}"
+
+        withdraw_token = make_withdraw_token(self.name, requestor_email)
+        withdraw_url = f"{get_url()}/support-iid-case-withdraw/new?token={withdraw_token}"
+
+        lines = [
+            f"Dear {requestor_name},",
+            "",
+            f"**You have submitted the updates for case {self.name}.**",
+            "",
+            f"The revised support request for {beneficiary or 'the beneficiary'} has been "
+            f"resubmitted and is now pending **{level_label or 'approval'}**. You will "
+            f"receive an update by email as the case moves through review.",
+            "",
+            "If you no longer need this request, you can withdraw it at any "
+            "time before a final decision is made:",
+            f"[Withdraw this case]({withdraw_url})",
+            "",
+            "Regards,",
+            "Support IID Team",
+        ]
+
+        try:
+            _send_plain_email(
+                recipients=[requestor_email],
+                subject=subject,
+                lines=lines,
+            )
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Requestor resubmit acknowledgement failed — {self.name}",
             )
 
     # ── Email body builder ─────────────────────────────────────────────────────
@@ -1679,6 +1839,208 @@ def process_case_approval(case_name=None, action=None, comments=None, token=None
     return encrypt_response(result)
 
 
+@frappe.whitelist(allow_guest=True)
+def resolve_withdraw_token(token):
+    """
+    Guest-safe lookup used by the (unauthenticated) withdraw web form:
+    decrypts the emailed token and returns just enough display info to
+    pre-fill the form — without exposing any other case data or
+    requiring a Frappe login.
+    """
+    payload = read_withdraw_token(token)
+    if not payload:
+        frappe.throw("This withdraw link is invalid or has expired.")
+
+    case_name = payload.get("case_name")
+    requestor_email = payload.get("requestor_email")
+
+    doc = frappe.get_doc("Case Register", case_name)
+    if (doc.requestor_email or "").strip().lower() != requestor_email:
+        frappe.throw("This withdraw link is invalid or has expired.")
+
+    return encrypt_response({
+        "case_name":        case_name,
+        "beneficiary_name": doc.beneficiary_name or "",
+        "case_status":      doc.case_status or "",
+        "requestor_name":   doc.requestor_name or "",
+    })
+
+
+@frappe.whitelist(allow_guest=True)
+def withdraw_case(token, reason=None, otp=None, verify_ticket=None):
+    """
+    Withdraws a case at the requestor's own request — guest, token + OTP
+    authenticated exactly like submit_case_edit. Only callable while the
+    case is still in progress (Pending Approval or Sent Back); a case
+    that's already Approved, Rejected, Closed, or already Withdrawn
+    can't be withdrawn a second time or reversed through this endpoint.
+
+    A reason is required — this is a definite, user-facing action with
+    real consequences (approvers get notified the case is off the
+    table), not something to allow silently.
+    """
+    payload = read_withdraw_token(token)
+    if not payload:
+        frappe.throw("This withdraw link is invalid or has expired.")
+
+    if not _otp_or_ticket_verified(token, otp, verify_ticket):
+        frappe.throw("Invalid or expired verification code. Please request a new one and try again.")
+
+    reason = (reason or "").strip()
+    if not reason:
+        frappe.throw("Please provide a reason for withdrawing this case.")
+
+    case_name = payload.get("case_name")
+    requestor_email = payload.get("requestor_email")
+
+    doc = frappe.get_doc("Case Register", case_name)
+    if (doc.requestor_email or "").strip().lower() != requestor_email:
+        frappe.throw("This withdraw link is invalid or has expired.")
+
+    if doc.case_status not in (CASE_STATUS_PENDING, CASE_STATUS_SENT_BACK):
+        frappe.throw("This case can no longer be withdrawn — its current status is " + (doc.case_status or "unknown") + ".")
+
+    doc.case_status = CASE_STATUS_WITHDRAWN
+    doc.current_approval_level = ""
+    doc.append("case_approval_log", {
+        "date": today(),
+        "level": "",
+        "approver_name": doc.requestor_name or "",
+        "action": "Withdrawn",
+        "comments": reason,
+    })
+    doc.save(ignore_permissions=True)
+    _safe_commit(case_name)
+
+    try:
+        _send_plain_email(
+            recipients=[doc.requestor_email],
+            subject=f"Case Withdrawn - [{doc.name}] - {doc.beneficiary_name or ''}",
+            lines=[
+                f"Dear {doc.requestor_name or 'Team'},",
+                "",
+                f"**You have withdrawn case {doc.name}.**",
+                "",
+                f"**Reason:** {reason}",
+                "",
+                "No further action will be taken on this case. If this was a "
+                "mistake, please submit a new request.",
+                "",
+                "Regards,",
+                "Support IID Team",
+            ],
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Withdraw confirmation email failed — {doc.name}")
+
+    _notify_reviewers_of_withdrawal(doc, reason)
+
+    return encrypt_response({"case_status": doc.case_status})
+
+
+def _notify_reviewers_of_withdrawal(doc, reason):
+    """
+    Emails every user holding the Reviewer role — the people who handle
+    documentation/disbursement on approved cases — that this case has
+    been withdrawn and is off the table. Not tied to any specific
+    approval stage's approver_email, since Reviewer is a separate,
+    app-wide role (potentially several people, assigned via Desk > User
+    > Roles) rather than a per-case assignment.
+    """
+    reviewer_emails = frappe.get_all(
+        "Has Role",
+        filters={"role": "Reviewer", "parenttype": "User"},
+        pluck="parent",
+    )
+    reviewer_emails = [
+        e for e in reviewer_emails if e and e not in ("Administrator", "Guest")
+    ]
+    if not reviewer_emails:
+        return
+
+    try:
+        _send_plain_email(
+            recipients=reviewer_emails,
+            subject=f"Case Withdrawn - [{doc.name}] - {doc.beneficiary_name or ''}",
+            lines=[
+                "Dear Reviewer,",
+                "",
+                f"**Case {doc.name} has been withdrawn by the requestor.**",
+                f"**Beneficiary:** {doc.beneficiary_name or '-'}",
+                f"**Requestor:** {doc.requestor_name or '-'} ({doc.requestor_email or '-'})",
+                "",
+                f"**Reason given:** {reason}",
+                "",
+                "No further action is needed on this case.",
+                "",
+                "Regards,",
+                "Support IID Team",
+            ],
+        )
+    except Exception:
+        frappe.log_error(frappe.get_traceback(), f"Reviewer withdrawal notification failed — {doc.name}")
+
+
+@frappe.whitelist()
+def close_case(case_name, approved_amount=None,
+               utr_details=None, milaap_recommendation=None, milaap_campaign_link=None):
+    """
+    Marks an Approved case as Closed, recording the fund-transfer details
+    a Reviewer confirms at closure time. Only callable on a case whose
+    current status is Approved — closing is the final step after the
+    money has actually gone out, not a status any case can jump to.
+
+    date_of_transfer is not an input — it's always set to today, the date
+    the case is actually closed, not something the Reviewer types in.
+    approved_amount is required; the other fields are optional.
+
+    Permission: Administrator, System Manager, or a user with the
+    Reviewer role. (Same pattern as the Approver-role check in
+    process_case_approval — checked here rather than left to the
+    doctype's own permission model, since this endpoint's whole point is
+    to let Reviewer act without needing direct write access.)
+    """
+    user = frappe.session.user
+    if not (
+        user == "Administrator"
+        or "System Manager" in frappe.get_roles(user)
+        or "Reviewer" in frappe.get_roles(user)
+    ):
+        frappe.throw("You don't have permission to close cases.", frappe.PermissionError)
+
+    doc = frappe.get_doc("Case Register", case_name)
+    if doc.case_status != CASE_STATUS_APPROVED:
+        frappe.throw("Only an Approved case can be closed.")
+
+    if approved_amount is None or approved_amount == "":
+        frappe.throw("Approved Amount is required to close a case.")
+
+    # Date of Transfer is the date the case was actually closed, not a
+    # value the Reviewer types in — always today, regardless of what (if
+    # anything) was passed in.
+    doc.date_of_transfer = today()
+    doc.approved_amount = approved_amount
+    if utr_details:
+        doc.utr_details = utr_details
+    if milaap_recommendation:
+        doc.milaap_recommendation = milaap_recommendation
+    if milaap_campaign_link:
+        doc.milaap_campaign_link = milaap_campaign_link
+
+    doc.case_status = CASE_STATUS_CLOSED
+    doc.save(ignore_permissions=True)
+    _safe_commit(case_name)
+
+    return encrypt_response({
+        "case_status": doc.case_status,
+        "date_of_transfer": str(doc.date_of_transfer or ""),
+        "approved_amount": doc.approved_amount,
+        "utr_details": doc.utr_details,
+        "milaap_recommendation": doc.milaap_recommendation,
+        "milaap_campaign_link": doc.milaap_campaign_link,
+    })
+
+
 @frappe.whitelist()
 def get_approval_stages_for_case(case_name):
     """
@@ -1876,6 +2238,7 @@ def submit_case_edit(token, data, otp=None, verify_ticket=None):
         include_supporting_docs=True,
         previous_action="Send Back (revised & resubmitted)",
     )
+    doc._send_requestor_resubmit_acknowledgement_email(level_label=doc.current_approval_level)
 
     return encrypt_response({
         "case_status": doc.case_status,

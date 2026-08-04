@@ -31,14 +31,24 @@ const STATUS_COLOR = {
 	'Approved': 'green'
 };
 
+// The stored case_status value stays "Sent Back" (Link value, used in
+// filters/data/comparisons everywhere) — this is the one place that
+// value should actually show something friendlier to a user: "Pending
+// with Requester" instead of the more passive "Sent Back".
+const STATUS_DISPLAY_LABELS = { 'Sent Back': 'Pending with Requester' };
+function status_display_label(status) {
+	return STATUS_DISPLAY_LABELS[status] || status;
+}
+
 // Case Status is now a fixed Link value ("Pending Approval") with the
 // current approval level tracked separately — this composes the two back
 // into one display string, e.g. "Pending Approval (L1 Reviewer)".
 function display_status(c) {
+	var label = status_display_label(c.case_status);
 	if ((c.case_status === 'Pending Approval' || c.case_status === 'Sent Back') && c.current_approval_level) {
-		return `${c.case_status} (${c.current_approval_level})`;
+		return `${label} (${c.current_approval_level})`;
 	}
-	return c.case_status || '';
+	return label || '';
 }
 
 function status_color(status) {
@@ -50,6 +60,11 @@ function status_color(status) {
 
 const ACTION_LABEL = { 'Approve': 'Approve', 'Decline': 'Decline', 'Send Back': 'Send Back' };
 const ACTION_PAST = { 'Approve': 'approved', 'Decline': 'declined', 'Send Back': 'sent back' };
+
+// Same public dataset used on the Support IID Dashboard's State/District
+// filters, so both pages offer the same real dropdown options instead of
+// free text.
+const INDIA_LOCATION_URL = 'https://raw.githubusercontent.com/sab99r/Indian-States-And-Districts/master/states-and-districts.json';
 
 const STATUS_HEX = {
 	gray: '#9aa1a8', blue: '#2490ef', orange: '#e29a3d',
@@ -324,6 +339,16 @@ class CaseListView {
 			#cl-table .cl-muted-cell { color:#6b7076; }
 			#cl-table .cl-type-chip { display:inline-block; padding:2px 10px; border:1px solid #d0d3d8; border-radius:20px; font-size:11.5px; font-weight:600; color:#3a3f45; }
 
+			/* Frappe's own .indicator-pill has a fixed 20px height, which
+			   breaks for longer combined text like "Pending with Requester
+			   (L2)" — the text wraps to a second line but the pill box
+			   doesn't grow, so the wrapped line overlaps/clips instead of
+			   just being a taller pill. Overridden here (not in frappe's
+			   own scss) to size to its content on one line instead. */
+			#cl-table .indicator-pill, .cl-modal .indicator-pill {
+				height:auto; min-height:20px; white-space:nowrap; max-width:none;
+			}
+
 			/* subtle colored accent tying each row to its status, inset so it doesn't disturb the grid borders */
 			#cl-table tbody tr td:first-child { box-shadow:inset 3px 0 0 0 var(--cl-row-accent, transparent); }
 
@@ -376,13 +401,18 @@ class CaseListView {
 					<input type="text" id="cl-f-id" class="form-control" placeholder="Case ID" style="max-width:120px;flex:1 1 100px">
 					<input type="text" id="cl-f-beneficiary" class="form-control" placeholder="Beneficiary" style="max-width:150px;flex:1 1 120px">
 					<input type="text" id="cl-f-requestor" class="form-control" placeholder="Requestor" style="max-width:150px;flex:1 1 120px">
-					<input type="text" id="cl-f-district" class="form-control" placeholder="District" style="max-width:130px;flex:1 1 110px">
+					<select id="cl-f-state" class="form-control" style="max-width:140px;flex:1 1 120px">
+						<option value="">All states</option>
+					</select>
+					<select id="cl-f-district" class="form-control" style="max-width:140px;flex:1 1 120px">
+						<option value="">All districts</option>
+					</select>
 					<select id="cl-status" class="form-control" style="max-width:190px;flex:1 1 150px">
 						<option value="">All statuses</option>
 						<option>Pending Approval</option>
 						<option>Approved</option>
 						<option>Rejected</option>
-						<option>Sent Back</option>
+						<option value="Sent Back">Pending with Requester</option>
 						<option>On Hold</option>
 						<option>Closed</option>
 					</select>
@@ -443,14 +473,40 @@ class CaseListView {
 					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(r.name)}</option>`);
 				});
 			});
+
+		this.load_location_data();
+	}
+
+	load_location_data() {
+		var self = this;
+		fetch(INDIA_LOCATION_URL)
+			.then((r) => r.json())
+			.then((data) => {
+				var states = (data && data.states) || [];
+				if (!states.length) return;
+
+				var stateSel = self.wrapper.find('#cl-f-state');
+				states.slice().sort((a, b) => (a.state || '').localeCompare(b.state || '')).forEach((s) => {
+					stateSel.append(`<option value="${frappe.utils.escape_html(s.state)}">${frappe.utils.escape_html(s.state)}</option>`);
+				});
+
+				var allDistricts = [];
+				states.forEach((s) => { allDistricts = allDistricts.concat(s.districts || []); });
+				allDistricts = Array.from(new Set(allDistricts)).sort();
+				var districtSel = self.wrapper.find('#cl-f-district');
+				allDistricts.forEach((d) => {
+					districtSel.append(`<option value="${frappe.utils.escape_html(d)}">${frappe.utils.escape_html(d)}</option>`);
+				});
+			})
+			.catch(() => { /* offline/blocked — filters remain functional via "All" only */ });
 	}
 
 	bind_events() {
 		var self = this;
-		this.wrapper.on('input', '#cl-f-id, #cl-f-beneficiary, #cl-f-requestor, #cl-f-district', frappe.utils.debounce(function () {
+		this.wrapper.on('input', '#cl-f-id, #cl-f-beneficiary, #cl-f-requestor', frappe.utils.debounce(function () {
 			self.page_num = 0; self.refresh_table();
 		}, 300));
-		this.wrapper.on('change', '#cl-status, #cl-type', function () {
+		this.wrapper.on('change', '#cl-status, #cl-type, #cl-f-state, #cl-f-district', function () {
 			self.page_num = 0; self.refresh_table();
 		});
 		this.wrapper.on('change', '#cl-test-mode', function () {
@@ -500,6 +556,10 @@ class CaseListView {
 			e.preventDefault();
 			self.open_action_modal($(this).data('action'));
 		});
+		this.wrapper.on('click', '.cl-close-case-open', function (e) {
+			e.preventDefault();
+			self.open_close_case_modal(self.current);
+		});
 		this.wrapper.on('click', '.cl-doc-card[data-doc-url]', function () {
 			self.open_document_modal($(this).data('doc-url'), $(this).data('doc-name'));
 		});
@@ -514,7 +574,8 @@ class CaseListView {
 		var id = (this.wrapper.find('#cl-f-id').val() || '').trim().toLowerCase();
 		var beneficiary = (this.wrapper.find('#cl-f-beneficiary').val() || '').trim().toLowerCase();
 		var requestor = (this.wrapper.find('#cl-f-requestor').val() || '').trim().toLowerCase();
-		var district = (this.wrapper.find('#cl-f-district').val() || '').trim().toLowerCase();
+		var state = this.wrapper.find('#cl-f-state').val();
+		var district = this.wrapper.find('#cl-f-district').val();
 
 		var rows = this.all_rows.filter(function (c) {
 			if (status && c.case_status !== status) return false;
@@ -522,7 +583,8 @@ class CaseListView {
 			if (id && (c.name || '').toLowerCase().indexOf(id) === -1) return false;
 			if (beneficiary && (c.beneficiary_name || '').toLowerCase().indexOf(beneficiary) === -1) return false;
 			if (requestor && (c.requestor_name || '').toLowerCase().indexOf(requestor) === -1) return false;
-			if (district && (c.district || '').toLowerCase().indexOf(district) === -1) return false;
+			if (state && c.state !== state) return false;
+			if (district && c.district !== district) return false;
 			return true;
 		});
 
@@ -690,13 +752,15 @@ class CaseListView {
 		var isMedical = (doc.type_of_request || '').toLowerCase() === 'medical';
 		var current = this.get_current_stage(doc);
 		var user = frappe.session.user;
-		var can_act = current && (
-			this.test_mode ||
+		var is_admin = this.test_mode ||
 			user === 'Administrator' ||
-			(frappe.user_roles || []).indexOf('System Manager') > -1 ||
+			(frappe.user_roles || []).indexOf('System Manager') > -1;
+		var can_act = current && (
+			is_admin ||
 			(frappe.user_roles || []).indexOf('Support IID Approver') > -1 ||
 			(current.stage.approver_email || '').toLowerCase() === user.toLowerCase()
 		);
+		var can_close = is_admin || (frappe.user_roles || []).indexOf('Reviewer') > -1;
 
 		function row(label, value, wide) {
 			var has = value !== null && value !== undefined && value !== '';
@@ -707,7 +771,11 @@ class CaseListView {
 		}
 
 		var action_html = '';
-		if (current) {
+		if (doc.case_status === 'Approved') {
+			if (can_close) {
+				action_html = `<button type="button" class="btn btn-primary btn-sm cl-close-case-open">Close Case</button>`;
+			}
+		} else if (current) {
 			if (can_act) {
 				action_html = `
 					<div class="btn-group cl-action-dropdown">
@@ -943,6 +1011,101 @@ class CaseListView {
 			callback: function (r) {
 				if (r && r.message) {
 					frappe.show_alert({ message: 'Case ' + past + '.', indicator: 'green' });
+					self.open_detail(doc.name);
+				}
+			}
+		});
+	}
+
+	// Reviewer / admin action on an Approved case — records fund-transfer
+	// details and marks it Closed. Mirrors open_action_modal/submit_approval
+	// above, but for this separate action + field set.
+	open_close_case_modal(doc) {
+		$('.cl-close-modal-backdrop').remove();
+		var self = this;
+
+		var modal = $(`
+			<div class="cl-modal-backdrop cl-close-modal-backdrop">
+				<div class="cl-modal cl-modal-lg">
+					<div class="cl-modal-header">
+						<div class="cl-modal-title">Close Case</div>
+						<button class="cl-modal-close" aria-label="Close">&times;</button>
+					</div>
+					<div class="cl-modal-body cl-modal-body-plain">
+						<div style="margin-bottom:16px">
+							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">Date of Transfer</label>
+							<div style="font-weight:600;font-size:15.5px">${frappe.datetime.str_to_user(frappe.datetime.get_today())}</div>
+						</div>
+						<div style="margin-bottom:16px">
+							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">Approved Amount <span style="color:#c0392b">*</span></label>
+							<input type="number" step="0.01" class="form-control" id="cl-close-approved-amount" value="${doc.approved_amount || ''}">
+							<div id="cl-close-amount-error" style="display:none;color:#c0392b;font-size:12px;margin-top:4px"></div>
+						</div>
+						<div style="margin-bottom:16px">
+							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">UTR Details</label>
+							<input type="text" class="form-control" id="cl-close-utr" value="${frappe.utils.escape_html(doc.utr_details || '')}">
+						</div>
+						<div style="margin-bottom:16px">
+							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">Milaap Recommendation</label>
+							<textarea class="form-control" id="cl-close-milaap-recommendation" rows="4">${frappe.utils.escape_html(doc.milaap_recommendation || '')}</textarea>
+						</div>
+						<div style="margin-bottom:0">
+							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">Milaap Campaign Link</label>
+							<input type="text" class="form-control" id="cl-close-milaap-link" value="${frappe.utils.escape_html(doc.milaap_campaign_link || '')}">
+						</div>
+					</div>
+					<div class="cl-modal-footer">
+						<button class="btn btn-default" id="cl-close-cancel">Cancel</button>
+						<button class="btn btn-primary" id="cl-close-submit">Close Case</button>
+					</div>
+				</div>
+			</div>
+		`);
+
+		modal.on('click', function (e) { if (e.target === this) modal.remove(); });
+		modal.find('.cl-modal-close, #cl-close-cancel').on('click', function () { modal.remove(); });
+		$('body').append(modal);
+
+		modal.find('#cl-close-submit').on('click', function () {
+			var amount = modal.find('#cl-close-approved-amount').val();
+			if (!amount || isNaN(parseFloat(amount)) || parseFloat(amount) <= 0) {
+				modal.find('#cl-close-amount-error').text('Approved Amount is required.').show();
+				return;
+			}
+			var payload = {
+				approved_amount: amount,
+				utr_details: modal.find('#cl-close-utr').val(),
+				milaap_recommendation: modal.find('#cl-close-milaap-recommendation').val(),
+				milaap_campaign_link: modal.find('#cl-close-milaap-link').val()
+			};
+			modal.remove();
+			self.submit_close_case(doc, payload);
+		});
+	}
+
+	submit_close_case(doc, payload) {
+		var self = this;
+
+		if (self.test_mode) {
+			doc.case_status = 'Closed';
+			doc.date_of_transfer = frappe.datetime.get_today();
+			doc.approved_amount = payload.approved_amount ? parseFloat(payload.approved_amount) : doc.approved_amount;
+			doc.utr_details = payload.utr_details;
+			doc.milaap_recommendation = payload.milaap_recommendation;
+			doc.milaap_campaign_link = payload.milaap_campaign_link;
+			frappe.show_alert({ message: 'Case closed (sample data — not saved).', indicator: 'green' });
+			self.render_detail(doc);
+			return;
+		}
+
+		frappe.call({
+			method: 'support_iid.case_management.doctype.case_register.case_register.close_case',
+			args: Object.assign({ case_name: doc.name }, payload),
+			freeze: true,
+			freeze_message: 'Closing case...',
+			callback: function (r) {
+				if (r && r.message) {
+					frappe.show_alert({ message: 'Case closed.', indicator: 'green' });
 					self.open_detail(doc.name);
 				}
 			}

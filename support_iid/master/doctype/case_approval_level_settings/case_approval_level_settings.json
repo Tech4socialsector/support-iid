@@ -7,8 +7,7 @@
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "approval_limit_amount",
-  "function"
+  "approval_limit_amount"
  ],
  "fields": [
   {
@@ -16,14 +15,6 @@
    "fieldtype": "Currency",
    "in_list_view": 1,
    "label": "Approval limit amount",
-   "reqd": 1
-  },
-  {
-   "fieldname": "function",
-   "fieldtype": "Link",
-   "in_list_view": 1,
-   "label": "Function",
-   "options": "Functions list",
    "reqd": 1
   }
  ],

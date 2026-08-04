@@ -13,9 +13,9 @@ IGNORE_TEST_RECORD_DEPENDENCIES = []  # eg. ["User"]
 
 
 
-class IntegrationTestFunctionslist(IntegrationTestCase):
+class IntegrationTestSourceofRequestList(IntegrationTestCase):
 	"""
-	Integration tests for Functionslist.
+	Integration tests for SourceofRequestList.
 	Use this class for testing interactions between multiple components.
 	"""
 

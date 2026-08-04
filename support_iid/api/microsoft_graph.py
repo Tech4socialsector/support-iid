@@ -425,23 +425,18 @@ def encrypt_payload(data: dict) -> dict:
 # ------------------------------------------------------------------
 # Case Approval level settings lookup
 #
-# Filters by BOTH:
-#   function              = function_unit value from web form (Link to Functions list)
-#   approval_limit_amount >= funds_requested
+# Filters by approval_limit_amount >= funds_requested.
 #
 # Returns the first matching row name (e.g. "L1") and all settings
 # sorted ascending by approval_limit_amount.
 # ------------------------------------------------------------------
 
-def _get_level_settings(funds_requested: float, function_unit: str = None):
+def _get_level_settings(funds_requested: float):
     """
-    Returns (ceiling_level_name, ordered_settings_list).
-
-    If function_unit is provided, filters settings rows by that value first,
-    then finds the first row whose approval_limit_amount >= funds_requested.
-
-    If no matching row found with function_unit filter, falls back to
-    amount-only matching.
+    Returns (ceiling_level_name, ordered_settings_list) — the first
+    settings row (ascending by approval_limit_amount) whose ceiling is
+    >= funds_requested, or the highest level if funds_requested exceeds
+    every ceiling.
     """
     try:
         if not frappe.db.table_exists("Case Approval level settings"):
@@ -450,7 +445,7 @@ def _get_level_settings(funds_requested: float, function_unit: str = None):
         # Fetch all settings sorted by amount asc
         settings = frappe.get_all(
             "Case Approval level settings",
-            fields=["name", "approval_limit_amount", "function"],
+            fields=["name", "approval_limit_amount"],
             order_by="approval_limit_amount asc",
             ignore_permissions=True
         )
@@ -458,26 +453,13 @@ def _get_level_settings(funds_requested: float, function_unit: str = None):
         if not settings:
             return None, []
 
-        # Filter by function_unit if provided
-        if function_unit and function_unit.strip():
-            fu = function_unit.strip()
-            filtered = [
-                s for s in settings
-                if (s.get("function") or "").strip() == fu
-            ]
-        else:
-            filtered = settings
-
-        # Use function-filtered set if it has rows, otherwise fall back to all
-        search_set = filtered if filtered else settings
-
         # Find first row whose ceiling >= funds_requested
-        for row in search_set:
+        for row in settings:
             if float(row.get("approval_limit_amount") or 0) >= float(funds_requested or 0):
                 return row.get("name"), settings
 
         # Amount exceeds all — use highest level
-        return search_set[-1].get("name"), settings
+        return settings[-1].get("name"), settings
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Case Approval level settings fetch failed")
@@ -551,14 +533,13 @@ def _find_hierarchy_doc(email: str):
 # PATH A: Approval Hierarchy found
 # ------------------------------------------------------------------
 
-def _stages_from_hierarchy(parent_name: str, funds_requested: float, function_unit: str = None) -> list:
+def _stages_from_hierarchy(parent_name: str, funds_requested: float) -> list:
     """
     Loads Approval Hierarchy doc, reads approval_hierarchy_details
     child table (Case Approval Stage doctype).
 
-    Filters child rows by allowed levels based on:
-      - function_unit (from web form Function / Unit field)
-      - funds_requested (checked against Case Approval level settings)
+    Filters child rows by allowed levels based on funds_requested
+    (checked against Case Approval level settings).
     """
     try:
         doc        = frappe.get_doc("Approval Hierarchy", parent_name)
@@ -570,8 +551,8 @@ def _stages_from_hierarchy(parent_name: str, funds_requested: float, function_un
     if not child_rows:
         return []
 
-    # Get ceiling level based on function_unit + amount
-    ceiling_name, settings = _get_level_settings(funds_requested, function_unit)
+    # Get ceiling level based on amount
+    ceiling_name, settings = _get_level_settings(funds_requested)
 
     if ceiling_name and settings:
         allowed = _allowed_level_names(ceiling_name, settings)
@@ -612,9 +593,9 @@ def _stages_from_hierarchy(parent_name: str, funds_requested: float, function_un
 # PATH B: No Approval Hierarchy — use Graph manager chain
 # ------------------------------------------------------------------
 
-def _stages_from_graph_chain(manager_chain: list, funds_requested: float, function_unit: str = None) -> list:
+def _stages_from_graph_chain(manager_chain: list, funds_requested: float) -> list:
 
-    ceiling_name, settings = _get_level_settings(funds_requested, function_unit)
+    ceiling_name, settings = _get_level_settings(funds_requested)
 
     if ceiling_name and settings:
         ordered = [s.get("name") for s in settings]
@@ -712,7 +693,7 @@ def get_manager_chain(email: str, headers: dict, max_depth: int = 3) -> list:
 # ------------------------------------------------------------------
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-def get_employee_details(email, funds_requested=None, function_unit=None):
+def get_employee_details(email, funds_requested=None):
 
     token   = get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
@@ -779,22 +760,21 @@ def get_employee_details(email, funds_requested=None, function_unit=None):
     # ------------------------------------------------------------------
     approval_stages = []
     funds = float(funds_requested or 0)
-    fu    = (function_unit or "").strip()
 
     try:
         hierarchy_name = _find_hierarchy_doc(email)
 
         if hierarchy_name:
             # Path A: use Approval Hierarchy child table
-            approval_stages = _stages_from_hierarchy(hierarchy_name, funds, fu)
+            approval_stages = _stages_from_hierarchy(hierarchy_name, funds)
         else:
             # Path B: use Graph manager chain
-            approval_stages = _stages_from_graph_chain(manager_chain, funds, fu)
+            approval_stages = _stages_from_graph_chain(manager_chain, funds)
 
     except Exception:
         frappe.log_error(frappe.get_traceback(), "Approval stage build failed")
         try:
-            approval_stages = _stages_from_graph_chain(manager_chain, funds, fu)
+            approval_stages = _stages_from_graph_chain(manager_chain, funds)
         except Exception:
             approval_stages = []
 

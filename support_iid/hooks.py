@@ -90,10 +90,11 @@ app_license = "mit"
 fixtures = [
 	"Case Status List",
 	"Type of Request List",
+	"Source of Request List",
 	"Documents list",
-	"Functions list",
 	"Qualification",
 	"Family Member Relationship",
+	{"dt": "Role", "filters": [["name", "in", ["Support IID Approver", "Reviewer"]]]},
 ]
 
 # Installation

@@ -5,5 +5,5 @@
 from frappe.model.document import Document
 
 
-class Functionslist(Document):
+class SourceofRequestList(Document):
 	pass

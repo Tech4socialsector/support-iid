@@ -39,7 +39,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Action",
-   "options": "\nAwaiting For Approval\nApprove\nDecline\nSend Back"
+   "options": "\nAwaiting For Approval\nApprove\nDecline\nSend Back\nWithdrawn"
   },
   {
    "fieldname": "comments",

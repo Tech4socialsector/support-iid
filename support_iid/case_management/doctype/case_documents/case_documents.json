@@ -10,7 +10,8 @@
   "documents_section",
   "document_name",
   "attachment",
-  "remarks"
+  "remarks",
+  "is_mandatory"
  ],
  "fields": [
   {
@@ -18,7 +19,7 @@
    "fieldtype": "Attach",
    "in_list_view": 1,
    "label": "Attachment",
-   "reqd": 1
+   "mandatory_depends_on": "eval: doc.is_mandatory"
   },
   {
    "fieldname": "remarks",
@@ -38,6 +39,13 @@
    "label": "Document Name",
    "options": "Documents list",
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "is_mandatory",
+   "fieldtype": "Check",
+   "hidden": 1,
+   "label": "Is Mandatory"
   }
  ],
  "grid_page_length": 100,
