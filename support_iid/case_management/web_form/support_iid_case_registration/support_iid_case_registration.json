@@ -21,7 +21,7 @@
  "list_columns": [],
  "login_required": 0,
  "max_attachment_size": 0,
- "modified": "2026-08-03 15:47:14.522344",
+ "modified": "2026-08-05 08:26:20.232188",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "support-iid-case-registration",
@@ -570,7 +570,7 @@
   {
    "allow_read_on_all_link_options": 0,
    "fieldname": "existing_debt",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "hidden": 0,
    "label": "Existing Debt (Ex: Outstanding House loan of 3lakhs)",
    "max_length": 0,
@@ -597,7 +597,7 @@
   {
    "allow_read_on_all_link_options": 0,
    "fieldname": "residence_details",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "hidden": 0,
    "label": "Residence Details (Ex: 1BHK House rent of rs8000 pm)",
    "max_length": 0,
@@ -627,7 +627,7 @@
    "depends_on": "",
    "description": "Describe the insurance coverage available (scheme, policy, benefits, and coverage amount) and explain why further financial assistance is needed.",
    "fieldname": "insurance_coverage_details",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "hidden": 0,
    "label": "Insurance Coverage Details",
    "max_length": 0,
@@ -668,7 +668,7 @@
    "allow_read_on_all_link_options": 0,
    "depends_on": "eval:doc.physical_verification==\"Yes\";",
    "fieldname": "physical_verification_notes",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "hidden": 0,
    "label": "Physical Verification Notes (Describe the visit details)",
    "mandatory_depends_on": "eval:doc.physical_verification==\"Yes\";",
@@ -684,7 +684,7 @@
   {
    "allow_read_on_all_link_options": 0,
    "fieldname": "genuineness_assessment",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "hidden": 0,
    "label": "Genuineness of the case",
    "max_length": 0,
@@ -697,7 +697,7 @@
   {
    "allow_read_on_all_link_options": 0,
    "fieldname": "vulnerability_assessment",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "hidden": 0,
    "label": "Vulnerability Assessment",
    "max_length": 0,
@@ -757,7 +757,7 @@
    "max_value": 0,
    "options": "Case Approval Stage",
    "precision": "",
-   "read_only": 0,
+   "read_only": 1,
    "reqd": 0,
    "show_in_filter": 0
   }

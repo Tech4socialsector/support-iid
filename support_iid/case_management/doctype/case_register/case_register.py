@@ -581,6 +581,24 @@ def _send_plain_email(recipients, subject, lines, attachments=None):
     )
 
 
+def _get_default_outgoing_email_account():
+    """
+    Cached per-request (on frappe.local) so multiple emails sent within
+    the same request (e.g. the approval-request email and the requestor
+    acknowledgement, both fired back-to-back from after_insert) reuse the
+    same EmailAccount instance and, in turn, get_smtp_server()'s cached
+    SMTP connection instead of opening a fresh connection — and
+    authenticating — for every single email. Some SMTP providers
+    (Outlook/Office365 among them) rate-limit or throttle rapid
+    successive connection/auth attempts from the same account, which can
+    cause a second or third email in the same request to fail or hang
+    where the first one succeeded.
+    """
+    if not getattr(frappe.local, "_support_iid_email_account", None):
+        frappe.local._support_iid_email_account = frappe.get_doc("Email Account", {"default_outgoing": 1})
+    return frappe.local._support_iid_email_account
+
+
 def _send_raw_email(recipients, subject, html_body, attachments=None, inline_images=None):
     """Builds and sends a MIME email directly over the default outgoing
     Email Account's SMTP session, bypassing frappe.sendmail()'s recipient
@@ -591,7 +609,7 @@ def _send_raw_email(recipients, subject, html_body, attachments=None, inline_ima
     from email.mime.image import MIMEImage
     from email.utils import formataddr, formatdate, make_msgid
 
-    email_account = frappe.get_doc("Email Account", {"default_outgoing": 1})
+    email_account = _get_default_outgoing_email_account()
     sender_email = email_account.email_id
     sender_name = email_account.name or "Support IID"
 
@@ -616,8 +634,25 @@ def _send_raw_email(recipients, subject, html_body, attachments=None, inline_ima
         fid = att.get("fid")
         if not fid:
             continue
-        file_doc = frappe.get_doc("File", fid)
-        content = file_doc.get_content()
+        try:
+            file_doc = frappe.get_doc("File", fid)
+            content = file_doc.get_content()
+        except Exception:
+            # A File record whose actual bytes are missing (e.g. its
+            # file_url/file_name got out of sync with what's physically
+            # on disk — seen from _rename_supporting_documents renaming
+            # the DB record without the matching physical file existing)
+            # must not take down the WHOLE email over one bad attachment.
+            # Better to send the email without that one attachment than
+            # to silently send nothing at all, which is what happened
+            # before this was guarded — the exception here used to
+            # propagate all the way out of _send_raw_email and abort the
+            # send entirely.
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Attachment file missing/unreadable (fid={fid}), skipped for this email",
+            )
+            continue
         if isinstance(content, str):
             content = content.encode("utf-8")
         part = MIMEApplication(content, Name=file_doc.file_name)
@@ -625,7 +660,17 @@ def _send_raw_email(recipients, subject, html_body, attachments=None, inline_ima
         root.attach(part)
 
     smtp = email_account.get_smtp_server()
-    smtp.session.sendmail(sender_email, list(recipients), root.as_string())
+    # smtplib.sendmail() only *raises* if EVERY recipient was refused —
+    # if some succeeded and others didn't, it returns a dict of the
+    # refused ones instead, which we'd otherwise silently ignore and
+    # report as "sent" even though delivery to that recipient failed.
+    refused = smtp.session.sendmail(sender_email, list(recipients), root.as_string())
+    if refused:
+        frappe.log_error(
+            f"SMTP send accepted for some recipients but refused for others.\n"
+            f"Subject: {subject}\nRefused: {refused}",
+            "Support IID email partially refused by SMTP server",
+        )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1071,13 +1116,31 @@ class CaseRegister(Document):
                 if os.path.exists(old_path) and not os.path.exists(new_path):
                     os.rename(old_path, new_path)
                     new_url = new_url_dir + safe_new_file_name
+                    renamed_file_name = new_file_name
                 else:
+                    # The physical rename didn't happen (source missing —
+                    # e.g. remote/S3-backed storage where get_full_path()
+                    # doesn't correspond to a real local disk path, or a
+                    # destination collision) — keep file_name/file_url as
+                    # they are RATHER than writing the new display name
+                    # against the old (unmoved) file. Writing file_name
+                    # here while file_url still points at the original
+                    # physical file left DB and disk internally consistent
+                    # with each other but silently untouched by this rename
+                    # attempt — previously this branch still wrote the new
+                    # file_name, which is misleading (the File record then
+                    # claims a name that was never actually applied) even
+                    # though it wasn't itself the direct cause of a missing
+                    # file, since file_url — the field that actually
+                    # determines what gets read from disk — was correctly
+                    # left alone.
                     new_url = file_doc.file_url
+                    renamed_file_name = file_doc.file_name
 
                 frappe.db.set_value(
                     "File", file_doc.name,
                     {
-                        "file_name":           new_file_name,
+                        "file_name":           renamed_file_name,
                         "file_url":            new_url,
                         "attached_to_doctype": "Case Register",
                         "attached_to_name":    self.name,
@@ -1196,11 +1259,56 @@ class CaseRegister(Document):
 
     # ── File lookup helper ─────────────────────────────────────────────────────
 
-    def _get_file_id_from_url(self, file_url):
-        """Return the Frappe File docname for a given file_url, or None."""
+    def _get_file_id_from_url(self, file_url, document_name=None):
+        """
+        Return the Frappe File docname for a given file_url, or None.
+
+        Tries an exact file_url match first (the common case). If that
+        finds nothing — e.g. _rename_supporting_documents() changed the
+        File record's actual file_url/file_name (renaming to "<Case ID> -
+        <document description>") but the child row's own "attachment"
+        string wasn't updated to match, because the rename's filesystem
+        step (os.rename on a local path) raised partway through on a
+        storage backend where files don't live on local disk (e.g. S3 on
+        some cloud hosts) — falls back to the exact filename
+        _rename_supporting_documents() would have produced, scoped to
+        files attached to this case. Without this, a stale/mismatched
+        exact URL silently drops the attachment from outgoing emails with
+        no error anywhere, since the caller just treats "file not found"
+        as "no attachment for this row".
+        """
         if not file_url:
             return None
-        return frappe.db.get_value("File", {"file_url": file_url}, "name")
+
+        fid = frappe.db.get_value("File", {"file_url": file_url}, "name")
+        if fid:
+            return fid
+
+        basename = file_url.rsplit("/", 1)[-1]
+        fid = frappe.db.get_value(
+            "File",
+            {
+                "attached_to_doctype": "Case Register",
+                "attached_to_name": self.name,
+                "file_url": ["like", f"%{basename}"],
+            },
+            "name",
+        )
+        if fid or not document_name:
+            return fid
+
+        safe_description = "".join(
+            c for c in document_name.strip() if c.isalnum() or c in (" ", "-", "_")
+        ).strip()
+        return frappe.db.get_value(
+            "File",
+            {
+                "attached_to_doctype": "Case Register",
+                "attached_to_name": self.name,
+                "file_name": ["like", f"{self.name} - {safe_description}.%"],
+            },
+            "name",
+        )
 
     # ── Approval-request email  (sent to approvers) ───────────────────────────
 
@@ -1269,7 +1377,7 @@ class CaseRegister(Document):
                 url = row.get("attachment")
                 if not url:
                     continue
-                fid = self._get_file_id_from_url(url)
+                fid = self._get_file_id_from_url(url, document_name=row.get("document_name"))
                 if fid:
                     attachments.append({"fid": fid})
 
