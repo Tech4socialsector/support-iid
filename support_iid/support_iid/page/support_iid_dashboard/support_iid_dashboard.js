@@ -532,9 +532,9 @@ class SupportIIDDashboard {
 				<div class="sd-filter-bar">
 					<div class="sd-filter-grid">
 						<div class="sd-filter-item">
-							<label>Type of Request</label>
-							<select id="sd-f-type" class="form-control">
-								<option value="">All types</option>
+							<label>Source of Request</label>
+							<select id="sd-f-source" class="form-control">
+								<option value="">All sources</option>
 							</select>
 						</div>
 						<div class="sd-filter-item">
@@ -609,16 +609,11 @@ class SupportIIDDashboard {
 
 		frappe.db.get_list('Type of Request List', { fields: ['name'], limit_page_length: 0 })
 			.then((rows) => {
-				var sel = this.wrapper.find('#sd-f-type');
-				(rows || []).forEach((r) => {
-					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(r.name)}</option>`);
-				});
-				sel.append('<option value="Others">Others</option>');
-
-				// Cached in case anything else needs the known-types list —
-				// built from whatever entries actually exist in this master
-				// doctype, not a hardcoded Medical/Education list, so a new
-				// type added here shows up automatically.
+				// Cached for the "Type of Request" cards — one card per type
+				// actually in Type of Request List, so adding a new type
+				// there is enough to get a matching card, no code change
+				// needed. No longer a filter dropdown — replaced by clicking
+				// through to the drilldown from each card instead.
 				this.request_types = (rows || []).map((r) => r.name);
 				this.render_metrics();
 			});
@@ -635,11 +630,15 @@ class SupportIIDDashboard {
 
 		frappe.db.get_list('Source of Request List', { fields: ['name'], order_by: 'sequence_id asc', limit_page_length: 0 })
 			.then((rows) => {
-				// Cached for the "Source of Request" cards — one card per
-				// source actually in Source of Request List, so adding a new
-				// source there is enough to get a matching card, no code
-				// change needed. No longer a filter dropdown — replaced by
-				// clicking through to the drilldown from each card instead.
+				var sel = this.wrapper.find('#sd-f-source');
+				(rows || []).forEach((r) => {
+					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(r.name)}</option>`);
+				});
+
+				// Cached in case anything else needs the known-sources list —
+				// built from whatever entries actually exist in this master
+				// doctype, not a hardcoded list, so a new source added here
+				// shows up automatically.
 				this.request_sources = (rows || []).map((r) => r.name);
 				this.render_metrics();
 			});
@@ -703,11 +702,11 @@ class SupportIIDDashboard {
 			self.test_mode = $(this).is(':checked');
 			self.load_data();
 		});
-		this.wrapper.on('change', '#sd-f-type, #sd-f-status, #sd-f-state, #sd-f-district', function () {
+		this.wrapper.on('change', '#sd-f-source, #sd-f-status, #sd-f-state, #sd-f-district', function () {
 			self.apply_filters();
 		});
 		this.wrapper.on('click', '#sd-f-clear', function () {
-			self.wrapper.find('#sd-f-type, #sd-f-status, #sd-f-state, #sd-f-district').val('');
+			self.wrapper.find('#sd-f-source, #sd-f-status, #sd-f-state, #sd-f-district').val('');
 			self.from_control.set_value('');
 			self.upto_control.set_value('');
 			self.apply_filters();
@@ -740,8 +739,7 @@ class SupportIIDDashboard {
 	}
 
 	apply_filters() {
-		var type = this.wrapper.find('#sd-f-type').val();
-		var request_types = this.request_types || [];
+		var source = this.wrapper.find('#sd-f-source').val();
 		var status = this.wrapper.find('#sd-f-status').val();
 		var district = (this.wrapper.find('#sd-f-district').val() || '').trim().toLowerCase();
 		var state = (this.wrapper.find('#sd-f-state').val() || '').trim().toLowerCase();
@@ -749,11 +747,7 @@ class SupportIIDDashboard {
 		var upto = this.upto_control ? this.upto_control.get_value() : '';
 
 		this.rows = (this.all_rows || []).filter((c) => {
-			if (type === 'Others') {
-				if (request_types.indexOf(c.type_of_request) !== -1) return false;
-			} else if (type && c.type_of_request !== type) {
-				return false;
-			}
+			if (source && c.source_of_request !== source) return false;
 			if (status && c.case_status !== status) return false;
 			if (district && (c.district || '').toLowerCase().indexOf(district) === -1) return false;
 			if (state && (c.state || '').toLowerCase().indexOf(state) === -1) return false;
@@ -810,12 +804,15 @@ class SupportIIDDashboard {
 			}
 		];
 
-		// Status is now a filter dropdown above instead of its own cards —
-		// this section instead leads with Total Cases / Cases In Progress,
-		// then one card per source actually in Source of Request List, so
-		// adding a new source there is enough to get a matching card, no
-		// code change needed.
-		var source_list = (this.request_sources && this.request_sources.length) ? this.request_sources : [];
+		// Source of Request is now a filter dropdown above instead of its
+		// own cards — this section instead leads with Total Cases / Cases
+		// In Progress, then one card per type actually in Type of Request
+		// List, plus a catch-all "Others" for any case whose
+		// type_of_request doesn't match a known type (blank, legacy, or a
+		// stray value) — adding a new type there is enough to get a
+		// matching card, no code change needed.
+		var type_list = (this.request_types && this.request_types.length) ? this.request_types : [];
+		var other_rows = rows.filter((c) => type_list.indexOf(c.type_of_request) === -1);
 
 		var status_cards = [
 			{
@@ -828,14 +825,18 @@ class SupportIIDDashboard {
 				sub: 'awaiting review, approval, or action',
 				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status))
 			}
-		].concat(source_list.map((source) => {
-			var source_rows = rows.filter((c) => c.source_of_request === source);
+		].concat(type_list.map((t) => {
+			var type_rows = rows.filter((c) => c.type_of_request === t);
 			return {
-				icon: icon('tag', 18), label: source, value: source_rows.length,
-				sub: source_rows.length + ' case(s)',
-				click: () => self.open_drilldown(source + ' cases', (c) => c.source_of_request === source)
+				icon: icon('tag', 18), label: t, value: type_rows.length,
+				sub: type_rows.length + ' case(s)',
+				click: () => self.open_drilldown(t + ' cases', (c) => c.type_of_request === t)
 			};
-		}));
+		})).concat(other_rows.length ? [{
+			icon: icon('tag', 18), label: 'Others', value: other_rows.length,
+			sub: other_rows.length + ' case(s)',
+			click: () => self.open_drilldown('Other cases', (c) => type_list.indexOf(c.type_of_request) === -1)
+		}] : []);
 
 		this.render_metric_group('#sd-metrics-financial', financial_cards);
 		this.render_metric_group('#sd-metrics-status', status_cards);

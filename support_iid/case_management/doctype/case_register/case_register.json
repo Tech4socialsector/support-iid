@@ -59,10 +59,10 @@
   "physical_verification",
   "physical_verification_notes",
   "genuineness_assessment",
+  "milaap_recommendation",
   "column_break_dhaq",
   "vulnerability_assessment",
   "milaap_campaign_link",
-  "milaap_recommendation",
   "case_documents_section",
   "supporting_documents",
   "case_approval",
@@ -104,8 +104,7 @@
    "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Type of Request",
-   "options": "Type of Request List",
-   "reqd": 1
+   "options": "Type of Request List"
   },
   {
    "fieldname": "column_break_fbnu",
@@ -115,15 +114,13 @@
    "fieldname": "request_date",
    "fieldtype": "Date",
    "in_list_view": 1,
-   "label": "Request Date",
-   "reqd": 1
+   "label": "Request Date"
   },
   {
    "fieldname": "source_of_request",
    "fieldtype": "Link",
    "label": "Source of Request",
-   "options": "Source of Request List",
-   "reqd": 1
+   "options": "Source of Request List"
   },
   {
    "fieldname": "beneficiary_information_section",
@@ -133,8 +130,7 @@
   {
    "fieldname": "beneficiary_name",
    "fieldtype": "Data",
-   "label": "Beneficiary Name (as per Aadhar)",
-   "reqd": 1
+   "label": "Beneficiary Name (as per Aadhar)"
   },
   {
    "fieldname": "age",
@@ -145,8 +141,7 @@
    "fieldname": "mobile_number",
    "fieldtype": "Data",
    "label": "Mobile Number (as per Aadhar)",
-   "options": "Phone",
-   "reqd": 1
+   "options": "Phone"
   },
   {
    "fieldname": "qualification",
@@ -167,15 +162,13 @@
   {
    "fieldname": "date_of_birth",
    "fieldtype": "Date",
-   "label": "Date of Birth (as per Aadhar)",
-   "reqd": 1
+   "label": "Date of Birth (as per Aadhar)"
   },
   {
    "fieldname": "gender",
    "fieldtype": "Select",
    "label": "Gender",
-   "options": "\nMale\nFemale\nothers",
-   "reqd": 1
+   "options": "\nMale\nFemale\nothers"
   },
   {
    "fieldname": "email",
@@ -187,8 +180,7 @@
    "fieldname": "employment_status",
    "fieldtype": "Select",
    "label": "Employment Status",
-   "options": "\nEmployed\nUnemployed\nRetired",
-   "reqd": 1
+   "options": "\nEmployed\nUnemployed\nRetired"
   },
   {
    "fieldname": "primary_contact_mobile",
@@ -199,27 +191,23 @@
   {
    "fieldname": "address_line_1",
    "fieldtype": "Data",
-   "label": "Address Line 1",
-   "reqd": 1
+   "label": "Address Line 1"
   },
   {
    "fieldname": "district",
    "fieldtype": "Data",
-   "label": "District",
-   "reqd": 1
+   "label": "District"
   },
   {
    "fieldname": "pincode",
    "fieldtype": "Int",
    "label": "Pincode",
-   "non_negative": 1,
    "reqd": 1
   },
   {
    "fieldname": "state",
    "fieldtype": "Data",
-   "label": "State",
-   "reqd": 1
+   "label": "State"
   },
   {
    "fieldname": "request_details_section",
@@ -229,8 +217,7 @@
   {
    "fieldname": "hospital_institution_name",
    "fieldtype": "Data",
-   "label": "Hospital / Institution Name",
-   "reqd": 1
+   "label": "Hospital / Institution Name"
   },
   {
    "fieldname": "column_break_eybn",
@@ -239,8 +226,7 @@
   {
    "fieldname": "hospital_institution_location",
    "fieldtype": "Data",
-   "label": "Hospital / Institution Location",
-   "reqd": 1
+   "label": "Hospital / Institution Location"
   },
   {
    "fieldname": "ailment__course_details",
@@ -256,15 +242,13 @@
    "fieldname": "funds_requested",
    "fieldtype": "Currency",
    "label": "Funds Requested",
-   "non_negative": 1,
-   "reqd": 1
+   "non_negative": 1
   },
   {
    "fieldname": "amount_already_spent",
    "fieldtype": "Currency",
    "label": "Amount Already Spent",
-   "non_negative": 1,
-   "reqd": 1
+   "non_negative": 1
   },
   {
    "fieldname": "financial_information_insurance_section",
@@ -278,7 +262,7 @@
   },
   {
    "fieldname": "existing_debt",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Existing Debt (For Ex: Rs 4000 is paid for House loan)"
   },
   {
@@ -289,7 +273,7 @@
   },
   {
    "fieldname": "residence_details",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Residence Details (For Ex: 1BHK/2BHK/3BHK)"
   },
   {
@@ -321,12 +305,12 @@
   },
   {
    "fieldname": "physical_verification_notes",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Physical Verification Notes"
   },
   {
    "fieldname": "genuineness_assessment",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Genuineness Assessment"
   },
   {
@@ -335,7 +319,7 @@
   },
   {
    "fieldname": "vulnerability_assessment",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Vulnerability Assessment"
   },
   {
@@ -345,7 +329,7 @@
   },
   {
    "fieldname": "milaap_recommendation",
-   "fieldtype": "Small Text",
+   "fieldtype": "Data",
    "label": "Milaap recommendation"
   },
   {
@@ -393,8 +377,7 @@
    "fieldname": "marital_status",
    "fieldtype": "Select",
    "label": "Marital Status",
-   "options": "\nSingle\nMarried\nDivorced\nWidowed",
-   "reqd": 1
+   "options": "\nSingle\nMarried\nDivorced\nWidowed"
   },
   {
    "fieldname": "note_about_the_individual",
@@ -415,8 +398,7 @@
   {
    "fieldname": "department",
    "fieldtype": "Data",
-   "label": "Department",
-   "reqd": 1
+   "label": "Department"
   },
   {
    "fieldname": "work_location",
@@ -428,16 +410,14 @@
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Requestor Name",
-   "options": "Name",
-   "reqd": 1
+   "options": "Name"
   },
   {
    "fieldname": "requestor_mobile_number",
    "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Requestor Mobile number ",
-   "options": "Phone",
-   "reqd": 1
+   "options": "Phone"
   },
   {
    "fieldname": "case_approval",
@@ -493,7 +473,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-04 15:01:02.882011",
+ "modified": "2026-08-05 14:27:15.052573",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Register",
