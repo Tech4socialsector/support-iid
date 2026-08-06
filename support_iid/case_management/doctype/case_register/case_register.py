@@ -31,7 +31,6 @@ import json
 import os
 import re
 import secrets
-import smtplib
 
 import frappe
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -566,10 +565,22 @@ def _lines_to_html(lines):
 
 def _email_signature_html():
     """Simple, unstyled signature block with the APF logo embedded inline
-    (via cid, see _logo_inline_image) — not sent as a file attachment."""
+    (via frappe.sendmail's inline_images — see _logo_inline_image) — not
+    sent as a file attachment.
+
+    Uses <img embed="..."> (frappe's own inline-image convention — see
+    replace_filename_with_cid in frappe/email/email_body.py), not
+    <img src="cid:...">: frappe.sendmail() only wires up an inline image
+    when it finds an embed="filename" attribute matching an entry in
+    inline_images, and rewrites it to src="cid:<random-id>" itself. A raw
+    src="cid:..." (this app's own convention from the old hand-rolled MIME
+    builder) is never touched by that mechanism, so the logo would silently
+    not render if this weren't updated when the send path switched to
+    frappe.sendmail().
+    """
     return (
         '<div style="margin-top:8px;padding-top:12px;border-top:1px solid #d9dce0">'
-        f'<img src="cid:{_APF_LOGO_FILENAME}" alt="Azim Premji Foundation" height="40"><br>'
+        f'<img embed="{_APF_LOGO_FILENAME}" alt="Azim Premji Foundation" height="40"><br>'
         '<span style="font-weight:bold">Support IID Team</span><br>'
         "Azim Premji Foundation<br>"
         '<span style="color:#5a5a5a">'
@@ -585,6 +596,67 @@ def _build_email_html(lines):
     return _lines_to_html(lines) + '<div style="height:16px"></div>' + _email_signature_html()
 
 
+_EMAIL_SHAPE_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _looks_like_email(value):
+    return bool(_EMAIL_SHAPE_RE.match((value or "").strip()))
+
+
+def _filter_valid_recipients(recipients, subject):
+    """Drops any recipient that isn't shaped like an email address, logging
+    each one — frappe.sendmail() validates every recipient itself and
+    THROWS on the first invalid one (aborting the whole send, including any
+    valid recipients on the same call), so a value like "L1 Moses" (a name
+    typed into the approver_email field by mistake — a real, repeated
+    occurrence in this app's data) must be caught here first rather than
+    handed to frappe.sendmail() and left to fail loudly."""
+    valid, dropped = [], []
+    for r in recipients or []:
+        (valid if _looks_like_email(r) else dropped).append(r)
+    if dropped:
+        frappe.log_error(
+            f"Dropped recipient(s) that are not valid email addresses — sent to the "
+            f"rest instead.\nSubject: {subject}\nDropped: {dropped}\nSent to: {valid}",
+            "Support IID email — invalid recipient(s) skipped",
+        )
+    return valid
+
+
+def _resolve_attachment_fids(attachments, subject):
+    """Drops any {"fid": ...} attachment whose File record's bytes aren't
+    actually readable on disk, logging each one.
+
+    frappe.sendmail(delayed=False/now=True) still resolves fid attachments
+    asynchronously (see EmailQueue.include_attachments in
+    frappe/email/doctype/email_queue/email_queue.py), which calls
+    File.get_content() with no try/except of its own — a File record whose
+    file_url doesn't correspond to an actual file on disk (seen repeatedly
+    in this app's data, e.g. after a botched rename) would raise there
+    INSIDE frappe's own send-after-commit handling, well outside this
+    module's ability to catch it. Checking eagerly here, before handing off
+    to frappe.sendmail(), keeps that failure a same-request, loggable,
+    skip-this-one-attachment event instead of a delayed one Frappe itself
+    has to surface.
+    """
+    resolved = []
+    for att in attachments or []:
+        fid = att.get("fid")
+        if not fid:
+            continue
+        try:
+            frappe.get_doc("File", fid).get_content()
+        except Exception:
+            frappe.log_error(
+                frappe.get_traceback(),
+                f"Attachment file missing/unreadable (fid={fid}), skipped for this email "
+                f"(Subject: {subject})",
+            )
+            continue
+        resolved.append(att)
+    return resolved
+
+
 def _send_plain_email(recipients, subject, lines, attachments=None):
     """
     Shared sender for all Support IID notification/approval emails: builds
@@ -592,154 +664,34 @@ def _send_plain_email(recipients, subject, lines, attachments=None):
     signature, and attaches any extra files (e.g. the case summary PDF or
     supporting documents) passed in `attachments`.
 
-    Sends over raw SMTP (via the site's default outgoing Email Account)
-    instead of frappe.sendmail(). Approver name/email on a case are typed
-    freehand into the Case Approval Stage grid on the public web form —
-    by design, that data is taken as-is and sent to whatever address is on
-    the row, with no email-format check. frappe.sendmail() always runs a
-    strict format validation on every recipient (raises "... is not a
-    valid Email Address" and refuses to send otherwise) with no way to
-    opt out of it — so approval emails are sent through this lower-level
-    path instead, which does no such validation.
+    Sends via frappe.sendmail(now=True) — queued through Frappe's own Email
+    Queue, sent right after the current transaction commits (not the
+    scheduler's delayed queue, and not a hand-rolled raw SMTP session).
+    Recipients that don't look like real email addresses and attachments
+    whose file content isn't actually readable are filtered out first (see
+    _filter_valid_recipients / _resolve_attachment_fids) — approver/
+    requestor addresses on this app are typed freehand with no format
+    enforcement at entry time, so a malformed one reaching frappe.sendmail()
+    directly would raise and abort the whole send instead of just being
+    skipped.
     """
-    logo = _logo_inline_image()
-    _send_raw_email(
-        recipients=recipients,
-        subject=subject,
-        html_body=_build_email_html(lines),
-        attachments=attachments or None,
-        inline_images=[logo] if logo else None,
-    )
-
-
-def _get_default_outgoing_email_account():
-    """
-    Cached per-request (on frappe.local) so multiple emails sent within
-    the same request (e.g. the approval-request email and the requestor
-    acknowledgement, both fired back-to-back from after_insert) reuse the
-    same EmailAccount instance and, in turn, get_smtp_server()'s cached
-    SMTP connection instead of opening a fresh connection — and
-    authenticating — for every single email. Some SMTP providers
-    (Outlook/Office365 among them) rate-limit or throttle rapid
-    successive connection/auth attempts from the same account, which can
-    cause a second or third email in the same request to fail or hang
-    where the first one succeeded.
-    """
-    if not getattr(frappe.local, "_support_iid_email_account", None):
-        frappe.local._support_iid_email_account = frappe.get_doc("Email Account", {"default_outgoing": 1})
-    return frappe.local._support_iid_email_account
-
-
-def _sanitize_header_value(value):
-    """Strips CR/LF from a value bound for a raw email header.
-
-    Subject lines here are built by interpolating guest-submitted, free-text
-    fields (requestor_name, beneficiary_name, ...) with no format validation
-    — by design, since that data is meant to be taken as-is (see
-    _send_plain_email's docstring). A stray newline in one of those fields
-    otherwise reaches the stdlib email package unescaped and raises
-    HeaderParseError while building the message, which — uncaught here —
-    used to abort the ENTIRE send (not just look wrong): a single case with
-    a newline character in its beneficiary/requestor name could silently
-    stop every email about that case from ever going out.
-    """
-    return "".join(str(value or "").splitlines())
-
-
-def _send_raw_email(recipients, subject, html_body, attachments=None, inline_images=None):
-    """Builds and sends a MIME email directly over the default outgoing
-    Email Account's SMTP session, bypassing frappe.sendmail()'s recipient
-    validation entirely. Recipients are used exactly as given (aside from
-    header-injection sanitization — see _sanitize_header_value)."""
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
-    from email.mime.application import MIMEApplication
-    from email.mime.image import MIMEImage
-    from email.utils import formataddr, formatdate, make_msgid
-
-    email_account = _get_default_outgoing_email_account()
-    sender_email = email_account.email_id
-    sender_name = email_account.name or "Support IID"
-
-    root = MIMEMultipart("mixed")
-    root["Subject"] = _sanitize_header_value(subject)
-    root["From"] = formataddr((sender_name, sender_email))
-    root["To"] = ", ".join(_sanitize_header_value(r) for r in recipients)
-    root["Date"] = formatdate(localtime=True)
-    root["Message-Id"] = make_msgid()
-
-    alt = MIMEMultipart("related")
-    root.attach(alt)
-    alt.attach(MIMEText(html_body, "html", "utf-8"))
-
-    for img in (inline_images or []):
-        part = MIMEImage(img["filecontent"])
-        part.add_header("Content-ID", f"<{img['filename']}>")
-        part.add_header("Content-Disposition", "inline", filename=img["filename"])
-        alt.attach(part)
-
-    for att in (attachments or []):
-        fid = att.get("fid")
-        if not fid:
-            continue
-        try:
-            file_doc = frappe.get_doc("File", fid)
-            content = file_doc.get_content()
-        except Exception:
-            # A File record whose actual bytes are missing (e.g. its
-            # file_url/file_name got out of sync with what's physically
-            # on disk — seen from _rename_supporting_documents renaming
-            # the DB record without the matching physical file existing)
-            # must not take down the WHOLE email over one bad attachment.
-            # Better to send the email without that one attachment than
-            # to silently send nothing at all, which is what happened
-            # before this was guarded — the exception here used to
-            # propagate all the way out of _send_raw_email and abort the
-            # send entirely.
-            frappe.log_error(
-                frappe.get_traceback(),
-                f"Attachment file missing/unreadable (fid={fid}), skipped for this email",
-            )
-            continue
-        if isinstance(content, str):
-            content = content.encode("utf-8")
-        part = MIMEApplication(content, Name=file_doc.file_name)
-        part["Content-Disposition"] = f'attachment; filename="{file_doc.file_name}"'
-        root.attach(part)
-
-    smtp = email_account.get_smtp_server()
-    # smtplib.sendmail() only *raises* (SMTPRecipientsRefused) if EVERY
-    # recipient was refused — if some succeeded and others didn't, it
-    # returns a dict of the refused ones instead, which we'd otherwise
-    # silently ignore and report as "sent" even though delivery to that
-    # recipient failed.
-    #
-    # Approver/requestor email addresses on this app are taken as typed,
-    # with no format/domain validation (see this function's and
-    # _send_plain_email's docstrings) — so an address that is not
-    # deliverable at all (e.g. a name typed into the wrong field) is an
-    # EXPECTED failure mode here, not a programming error, and must not
-    # propagate out of this function: every caller of _send_plain_email/
-    # _send_raw_email would otherwise need its own try/except to avoid a
-    # single bad address crashing the whole request (case creation,
-    # approval action, resubmit, ...), which is exactly the class of bug
-    # this app has repeatedly hit. Guarding it here, at the lowest level,
-    # makes that impossible regardless of what any given caller does.
-    try:
-        refused = smtp.session.sendmail(sender_email, list(recipients), root.as_string())
-    except smtplib.SMTPRecipientsRefused as e:
+    recipients = _filter_valid_recipients(recipients, subject)
+    if not recipients:
         frappe.log_error(
-            f"SMTP refused ALL recipients for this email.\n"
-            f"Subject: {subject}\nRecipients: {recipients}\nRefused: {e.recipients}",
-            "Support IID email rejected by SMTP server — all recipients refused",
+            f"No valid recipients remained after filtering — email not sent.\nSubject: {subject}",
+            "Support IID email skipped — no valid recipients",
         )
         return
-    if refused:
-        frappe.log_error(
-            f"SMTP send accepted for some recipients but refused for others.\n"
-            f"Subject: {subject}\nRefused: {refused}",
-            "Support IID email partially refused by SMTP server",
-        )
+
+    logo = _logo_inline_image()
+    frappe.sendmail(
+        recipients=recipients,
+        subject=subject,
+        message=_build_email_html(lines),
+        attachments=_resolve_attachment_fids(attachments, subject),
+        inline_images=[logo] if logo else None,
+        now=True,
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
