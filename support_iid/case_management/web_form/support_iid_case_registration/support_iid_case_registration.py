@@ -8,6 +8,20 @@ def get_context(context):
 
 
 @frappe.whitelist(allow_guest=True)
+def get_email_domain_validation_setting():
+    """Whether the requestor's own email must be on the org domain — read
+    by the web form's JS (which runs as Guest and can't call
+    frappe.db.get_single_value directly) before enforcing the
+    azimpremjifoundation.org check on the email/requestor_email fields.
+    Defaults to enabled if the setting is missing for any reason, since
+    that's the existing behavior this toggle was added to make optional."""
+    setting = frappe.db.get_single_value(
+        "Support IID Settings", "enforce_email_domain_validation"
+    )
+    return {"enforce": bool(setting) if setting is not None else True}
+
+
+@frappe.whitelist(allow_guest=True)
 def get_document_types(type_of_request):
     documents = []
 
@@ -33,43 +47,3 @@ def get_document_types(type_of_request):
 
 
 
-@frappe.whitelist(allow_guest=True)
-def get_case_approval_hierarchy(email):
-    hierarchy_name = frappe.db.get_value(
-        "Approval Hierarchy",
-        {
-            "requestor_email": email
-        },
-        "name"
-    )
-
-    if not hierarchy_name:
-        frappe.throw(
-            f"No Approval Hierarchy found for {email}"
-        )
-
-    hierarchy = frappe.get_doc(
-        "Approval Hierarchy",
-        hierarchy_name
-    )
-
-    approval_stage = []
-
-    for row in hierarchy.approval_hierarchy_details:
-
-        approval_stage.append({
-
-            "approver_name": row.approver_name,
-            "approver_email": row.approver_email,
-            "case_approval_level_decription": row.case_approval_level_decription,
-            "case_approval_status": "",
-            "case_approval_via": row.case_approval_via
-
-        })
-
-    return {
-
-        "requestor_name": hierarchy.requestor_name,
-        "approval_stage": approval_stage
-
-    }

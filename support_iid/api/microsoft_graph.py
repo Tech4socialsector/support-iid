@@ -4,8 +4,15 @@ import base64
 import os
 import json
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from frappe.rate_limiter import rate_limit
 
 GRAPH_URL = "https://graph.microsoft.com/v1.0"
+
+# The only domain this org-directory lookup is meant to serve — the case
+# registration web form restricts requestor_email to this domain client-side,
+# but that check is trivially bypassable by calling this whitelisted, guest
+# endpoint directly, so it must also be enforced here.
+ALLOWED_EMAIL_DOMAIN = "azimpremjifoundation.org"
 
 
 def get_access_token():
@@ -40,25 +47,16 @@ def get_access_token():
 
     response = requests.post(token_url, data=payload)
 
-    print("=" * 80)
-    print("TOKEN STATUS:", response.status_code)
-    print(response.text)
-    print("=" * 80)
-
     if response.status_code != 200:
-        frappe.throw(response.text)
+        # response.text on failure is an OAuth error body (error code/
+        # description), not a credential — safe to surface. On success it
+        # contains the live access_token itself, so it must never be
+        # logged/printed (a Graph API bearer token in server logs is
+        # effectively as sensitive as the client secret).
+        frappe.log_error(response.text, "Microsoft Graph token request failed")
+        frappe.throw("Could not obtain a Microsoft Graph access token.")
 
     return response.json()["access_token"]
-
-
-@frappe.whitelist()
-def test_token():
-    token = get_access_token()
-
-    return {
-        "success": True,
-        "token": token[:80] + "..."
-    }
 
 
 @frappe.whitelist()
@@ -693,7 +691,23 @@ def get_manager_chain(email: str, headers: dict, max_depth: int = 3) -> list:
 # ------------------------------------------------------------------
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
+@rate_limit(limit=20, seconds=60 * 60)
 def get_employee_details(email, funds_requested=None):
+    email = (email or "").strip()
+
+    # This is always the requestor's own email (the web form only ever
+    # calls this lookup for requestor_email, never approver_email) — gated
+    # by Support IID Settings.enforce_email_domain_validation so the same
+    # toggle that controls the web form's client-side domain check also
+    # controls this server-side one. Defaults to enforced if the setting is
+    # missing, matching the web form JS's own default.
+    enforce_domain = frappe.db.get_single_value(
+        "Support IID Settings", "enforce_email_domain_validation"
+    )
+    if enforce_domain is None or enforce_domain:
+        domain = email.rsplit("@", 1)[-1].lower() if "@" in email else ""
+        if domain != ALLOWED_EMAIL_DOMAIN:
+            frappe.throw("This lookup is only available for organization email addresses.")
 
     token   = get_access_token()
     headers = {"Authorization": f"Bearer {token}"}
@@ -723,37 +737,9 @@ def get_employee_details(email, funds_requested=None):
 
     user = response.json()
 
-    # Immediate manager
-    manager = {}
-    mgr_resp = requests.get(f"{GRAPH_URL}/users/{email}/manager", headers=headers)
-    if mgr_resp.status_code == 200:
-        m = mgr_resp.json()
-        manager = {
-            "name":        m.get("displayName"),
-            "email":       m.get("mail"),
-            "designation": m.get("jobTitle"),
-            "department":  m.get("department")
-        }
-
-    # Manager chain (always fetched for Path B fallback)
+    # Manager chain — fetched only as internal input to the approval-stage
+    # computation below (Path B fallback); not returned to the caller.
     manager_chain = get_manager_chain(email, headers, max_depth=3)
-
-    # Direct reports
-    direct_reports = []
-    rpt_resp = requests.get(f"{GRAPH_URL}/users/{email}/directReports", headers=headers)
-    if rpt_resp.status_code == 200:
-        for emp in rpt_resp.json().get("value", []):
-            direct_reports.append({
-                "name":        emp.get("displayName"),
-                "email":       emp.get("mail"),
-                "designation": emp.get("jobTitle")
-            })
-
-    # Profile photo
-    photo = None
-    ph_resp = requests.get(f"{GRAPH_URL}/users/{email}/photo/$value", headers=headers)
-    if ph_resp.status_code == 200:
-        photo = base64.b64encode(ph_resp.content).decode()
 
     # ------------------------------------------------------------------
     # Approval stages
@@ -778,26 +764,19 @@ def get_employee_details(email, funds_requested=None):
         except Exception:
             approval_stages = []
 
+    # Only the fields the web form actually consumes to prefill the case
+    # registration form are returned — manager/manager_chain/direct_reports/
+    # photo/employee_id/city/state/country are org-directory PII this
+    # endpoint has no need to expose to the caller.
     result = {
         "exists": True,
         "employee": {
-            "id":              user.get("id"),
             "name":            user.get("displayName"),
             "email":           user.get("mail") or user.get("userPrincipalName"),
             "department":      user.get("department"),
             "designation":     user.get("jobTitle"),
-            "company":         user.get("companyName"),
             "mobile":          user.get("mobilePhone"),
-            "work_phone":      user.get("businessPhones"),
             "office_location": user.get("officeLocation"),
-            "employee_id":     user.get("employeeId"),
-            "city":            user.get("city"),
-            "state":           user.get("state"),
-            "country":         user.get("country"),
-            "manager":         manager,
-            "manager_chain":   manager_chain,
-            "direct_reports":  direct_reports,
-            "photo":           photo
         },
         "approval_stages": approval_stages
     }

@@ -10,3 +10,4 @@ support_iid.patches.create_support_iid_approver_role
 support_iid.patches.create_support_iid_settings
 support_iid.patches.set_default_workspace_to_case_management
 support_iid.patches.resync_web_forms_and_remove_broken_links
+support_iid.patches.default_enforce_email_domain_validation

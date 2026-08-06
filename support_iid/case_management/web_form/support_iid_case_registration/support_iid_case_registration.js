@@ -682,6 +682,20 @@ frappe.ready(function () {
     var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     var OFFICIAL_DOMAIN = 'azimpremjifoundation.org';
 
+    // Support IID Settings.enforce_email_domain_validation — fetched once
+    // and cached; defaults to true (current behavior) until the real value
+    // comes back, so there's no brief window where the check is silently
+    // skipped while this call is in flight.
+    var enforceEmailDomain = true;
+    frappe.call({
+        method: 'support_iid.case_management.web_form.support_iid_case_registration.support_iid_case_registration.get_email_domain_validation_setting',
+        callback: function (r) {
+            if (r.message && typeof r.message.enforce === 'boolean') {
+                enforceEmailDomain = r.message.enforce;
+            }
+        }
+    });
+
     function clearRequestorFields() {
         frappe.web_form.set_value('requestor_name', '');
         frappe.web_form.set_value('requestor_mobile_number', '');
@@ -816,8 +830,10 @@ frappe.ready(function () {
             return;
         }
 
-        // Wrong domain (requestor email only)
-        if (fieldname === 'requestor_email') {
+        // Wrong domain (requestor email only — never applies to
+        // approver_email in the Case Approval Stage table, and only
+        // applies here at all when Support IID Settings has it enabled)
+        if (fieldname === 'requestor_email' && enforceEmailDomain) {
             var domain = trimmed.split('@')[1] || '';
             if (domain.toLowerCase() !== OFFICIAL_DOMAIN) {
                 fieldError(fieldname, 'This is not a member email. Please use your @azimpremjifoundation.org address.');

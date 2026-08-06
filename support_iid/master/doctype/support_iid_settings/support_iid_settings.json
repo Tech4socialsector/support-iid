@@ -7,7 +7,9 @@
  "engine": "InnoDB",
  "field_order": [
   "notifications_section",
-  "send_requestor_notification_emails"
+  "send_requestor_notification_emails",
+  "validation_section",
+  "enforce_email_domain_validation"
  ],
  "fields": [
   {
@@ -21,6 +23,18 @@
    "fieldname": "send_requestor_notification_emails",
    "fieldtype": "Check",
    "label": "Send Requestor Notification Emails"
+  },
+  {
+   "fieldname": "validation_section",
+   "fieldtype": "Section Break",
+   "label": "Validation"
+  },
+  {
+   "default": "1",
+   "description": "When enabled, the requestor's own email (the \"email\"/\"requestor_email\" fields on the case registration web form) must be on the azimpremjifoundation.org domain. This never applies to approver emails in the Case Approval Stage table, which are always accepted as typed regardless of this setting.",
+   "fieldname": "enforce_email_domain_validation",
+   "fieldtype": "Check",
+   "label": "Enforce Email Domain Validation"
   }
  ],
  "grid_page_length": 50,

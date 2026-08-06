@@ -35,6 +35,7 @@ import secrets
 import frappe
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from frappe.model.document import Document
+from frappe.rate_limiter import rate_limit
 from frappe.utils import fmt_money, format_date, get_url, today
 from frappe.utils.password import decrypt as frappe_decrypt
 from frappe.utils.password import encrypt as frappe_encrypt
@@ -47,20 +48,6 @@ ACTION_LABEL = {
     "Decline":   "Declined",
     "Send Back": "Sent Back for Revision",
 }
-
-# Minimal "does this look like an email" check — deliberately loose (this
-# app already decided, per explicit product direction, not to enforce
-# strict email validation on freehand-typed approver fields). This only
-# guards against sending mail to something that is CLEARLY not an email
-# at all (e.g. a level code or a name that ended up in the wrong field by
-# mistake) — that class of value crashes smtplib.sendmail() with
-# SMTPRecipientsRefused and silently drops the whole email (all
-# recipients, all content) rather than just that one bad address.
-_EMAIL_SHAPE_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
-
-
-def _looks_like_email(value):
-    return bool(_EMAIL_SHAPE_RE.match((value or "").strip()))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Case Status — fixed set of values, each a record in the "Case Status List"
@@ -369,15 +356,40 @@ def send_withdraw_otp(token):
     return {"sent": True}
 
 
+_OTP_MAX_ATTEMPTS = 5
+
+
+def _otp_attempts_cache_key(token):
+    return "support_iid_otp_attempts:" + hashlib.sha256(token.encode()).hexdigest()
+
+
 def _verify_and_consume_otp(token, otp):
-    """Returns True and deletes the OTP if it matches; False otherwise (does not raise)."""
+    """Returns True and deletes the OTP if it matches; False otherwise (does not raise).
+
+    A 6-digit OTP is only as strong as the guesswork it takes to brute-force
+    it — with no attempt cap, a leaked token (e.g. a forwarded email, browser
+    history, a Referer leak) could be brute-forced by simply calling this
+    within the 10-minute TTL. Once _OTP_MAX_ATTEMPTS wrong guesses have been
+    made for a given token, the OTP is invalidated outright (the caller must
+    request a fresh one), the same as if it had expired.
+    """
     if not token or not otp:
         return False
+
+    attempts_key = _otp_attempts_cache_key(token)
+    attempts = frappe.cache().get_value(attempts_key) or 0
+    if attempts >= _OTP_MAX_ATTEMPTS:
+        frappe.cache().delete_value(_otp_cache_key(token))
+        return False
+
     key = _otp_cache_key(token)
     stored = frappe.cache().get_value(key)
     if stored and secrets.compare_digest(str(stored), str(otp).strip()):
         frappe.cache().delete_value(key)
+        frappe.cache().delete_value(attempts_key)
         return True
+
+    frappe.cache().set_value(attempts_key, attempts + 1, expires_in_sec=_OTP_TTL_SECONDS)
     return False
 
 
@@ -429,6 +441,7 @@ def _otp_or_ticket_verified(token, otp, verify_ticket):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(limit=30, seconds=10 * 60)
 def verify_approval_otp(token, otp):
     """Explicit "Verify" step for the approval web form's OTP."""
     if not _verify_and_consume_otp(token, otp):
@@ -437,6 +450,7 @@ def verify_approval_otp(token, otp):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(limit=30, seconds=10 * 60)
 def verify_edit_otp(token, otp):
     """Explicit "Verify" step for the case-edit web form's OTP."""
     if not _verify_and_consume_otp(token, otp):
@@ -445,6 +459,7 @@ def verify_edit_otp(token, otp):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(limit=30, seconds=10 * 60)
 def verify_withdraw_otp(token, otp):
     """Explicit "Verify" step for the case-withdraw web form's OTP."""
     if not _verify_and_consume_otp(token, otp):
@@ -614,10 +629,27 @@ def _get_default_outgoing_email_account():
     return frappe.local._support_iid_email_account
 
 
+def _sanitize_header_value(value):
+    """Strips CR/LF from a value bound for a raw email header.
+
+    Subject lines here are built by interpolating guest-submitted, free-text
+    fields (requestor_name, beneficiary_name, ...) with no format validation
+    — by design, since that data is meant to be taken as-is (see
+    _send_plain_email's docstring). A stray newline in one of those fields
+    otherwise reaches the stdlib email package unescaped and raises
+    HeaderParseError while building the message, which — uncaught here —
+    used to abort the ENTIRE send (not just look wrong): a single case with
+    a newline character in its beneficiary/requestor name could silently
+    stop every email about that case from ever going out.
+    """
+    return "".join(str(value or "").splitlines())
+
+
 def _send_raw_email(recipients, subject, html_body, attachments=None, inline_images=None):
     """Builds and sends a MIME email directly over the default outgoing
     Email Account's SMTP session, bypassing frappe.sendmail()'s recipient
-    validation entirely. Recipients are used exactly as given."""
+    validation entirely. Recipients are used exactly as given (aside from
+    header-injection sanitization — see _sanitize_header_value)."""
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
     from email.mime.application import MIMEApplication
@@ -629,9 +661,9 @@ def _send_raw_email(recipients, subject, html_body, attachments=None, inline_ima
     sender_name = email_account.name or "Support IID"
 
     root = MIMEMultipart("mixed")
-    root["Subject"] = subject
+    root["Subject"] = _sanitize_header_value(subject)
     root["From"] = formataddr((sender_name, sender_email))
-    root["To"] = ", ".join(recipients)
+    root["To"] = ", ".join(_sanitize_header_value(r) for r in recipients)
     root["Date"] = formatdate(localtime=True)
     root["Message-Id"] = make_msgid()
 
@@ -1357,22 +1389,11 @@ class CaseRegister(Document):
             )
             return
 
-        if not _looks_like_email(approver_email):
-            # A value that isn't shaped like an email at all (e.g. a level
-            # code or a name landed in this field by mistake) crashes
-            # smtplib.sendmail() with SMTPRecipientsRefused and drops the
-            # WHOLE email — not just this recipient — since it's the only
-            # recipient on this send. Log clearly and skip rather than
-            # lose the requestor's PDF/acknowledgement email too, which
-            # would otherwise fail right alongside it if both are sent
-            # from the same calling code path.
-            frappe.log_error(
-                f"approver_email for stage {stage_idx} on {self.name} does not look like a "
-                f"valid email address: {approver_email!r} — approval email skipped. Check the "
-                f"Approval Hierarchy / Case Approval Stage data for this case and level.",
-                "Support IID approval email skipped — malformed approver_email",
-            )
-            return
+        # No format/domain check on approver_email — it's sent exactly as
+        # typed, by design (see _send_plain_email's docstring). If SMTP
+        # itself rejects it, that's caught below (around the actual send)
+        # and logged rather than raised, so a bad address here can't crash
+        # the whole request.
 
         req_name = (
             getattr(self, "requestor_name", None) or
