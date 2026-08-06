@@ -161,109 +161,12 @@ function period_label(key, granularity) {
 const INDIA_LOCATION_URL = 'https://raw.githubusercontent.com/sab99r/Indian-States-And-Districts/master/states-and-districts.json';
 
 // ---------------------------------------------------------------
-// SAMPLE DATA — for Test Mode, so the dashboard can be reviewed
-// without live data. Spans the last 14 months with varied status,
-// category, and financial-tracking values.
-// ---------------------------------------------------------------
-function generate_sample_dashboard_data() {
-	var types = ['Medical', 'Education'];
-	var statuses = ['Approved', 'Approved', 'Approved', 'Rejected', 'Sent Back', 'Pending Approval', 'Pending Approval', 'On Hold', 'Closed'];
-	var transfer_statuses = ['Fully Disbursed', 'Partially Disbursed', 'Pending'];
-	var districts = ['Villupuram', 'Chennai', 'Salem', 'Ranchi', 'Bangalore Urban', 'Dhar'];
-	var states = ['Tamil Nadu', 'Jharkhand', 'Karnataka', 'Madhya Pradesh'];
-	var sources = ['Field State', 'Philanthropy member', 'Health operations', 'Referred by partner', 'Email', 'Letter'];
-	var approvers = ['Karthik Rajan', 'Deepa Murali', 'Arun Krishnan', 'Mohan Velu'];
-	var rows = [];
-	var today = new Date();
-
-	for (var i = 0; i < 64; i++) {
-		var monthsAgo = Math.floor(Math.random() * 14);
-		var d = new Date(today.getFullYear(), today.getMonth() - monthsAgo, 1 + Math.floor(Math.random() * 27));
-		var date_str = d.toISOString().slice(0, 10);
-		var status = statuses[Math.floor(Math.random() * statuses.length)];
-		var type = types[Math.floor(Math.random() * types.length)];
-		var requested = 15000 + Math.floor(Math.random() * 8) * 10000;
-		var approved = status === 'Approved' ? Math.round(requested * (0.6 + Math.random() * 0.4) / 100) * 100 : 0;
-		var transfer = status === 'Approved' ? transfer_statuses[Math.floor(Math.random() * transfer_statuses.length)] : '';
-		var refund = (transfer === 'Fully Disbursed' && Math.random() < 0.15) ? Math.round(approved * 0.1) : 0;
-		var already_spent = Math.random() < 0.55 ? Math.round(requested * (0.05 + Math.random() * 0.3) / 100) * 100 : 0;
-		var approved_date = '';
-		if (status === 'Approved') {
-			var approvedDateObj = new Date(d.getTime() + (2 + Math.floor(Math.random() * 12)) * 86400000);
-			approved_date = approvedDateObj.toISOString().slice(0, 10);
-		}
-
-		rows.push({
-			name: 'SIID-SAMPLE-' + (1000 + i),
-			beneficiary_name: 'Sample Beneficiary ' + (i + 1),
-			case_status: status,
-			current_approval_level: status === 'Pending Approval' ? 'L2 Approver' : '',
-			type_of_request: type,
-			request_date: date_str,
-			approved_date: approved_date,
-			funds_requested: requested,
-			amount_already_spent: already_spent,
-			approved_amount: approved,
-			refund_amount_if_any: refund,
-			status_of_milaap_transfer: transfer,
-			district: districts[Math.floor(Math.random() * districts.length)],
-			state: states[Math.floor(Math.random() * states.length)],
-			source_of_request: sources[Math.floor(Math.random() * sources.length)],
-			approved_by: status === 'Approved' ? approvers[Math.floor(Math.random() * approvers.length)] : ''
-		});
-	}
-	return rows;
-}
-
-// Synthesizes the extra detail-only fields (family, documents, approval
-// history, etc.) for a sample row, on demand — the lightweight metric
-// rows don't carry this, so Test Mode builds it lazily when a case is opened.
-function build_sample_case_detail(row) {
-	var isMedical = row.type_of_request === 'Medical';
-	return Object.assign({}, row, {
-		requestor_name: 'Priya Selvam', requestor_email: 'priya.s@azimpremjifoundation.org',
-		department: 'Health Operations', work_location: 'Chennai',
-		age: 18 + Math.floor(Math.random() * 45), gender: Math.random() < 0.5 ? 'Female' : 'Male',
-		mobile_number: '98765' + (10000 + Math.floor(Math.random() * 89999)), email: '',
-		qualification: 'Graduation', employment_status: 'Unemployed', marital_status: 'Married',
-		pincode: 600001, address_line_1: 'Sample Address, ' + (row.district || 'Chennai'),
-		note_about_the_individual: 'Sample note about this beneficiary, for Test Mode demonstration purposes only.',
-		hospital_institution_name: isMedical ? 'Apollo Hospitals' : 'Government Polytechnic College',
-		hospital_institution_location: row.district || 'Chennai',
-		ailment__course_details: isMedical ? 'Sample ailment details.' : 'Sample course details.',
-		treatment: isMedical ? 'Sample treatment plan.' : '',
-		annual_family_income: 60000 + Math.floor(Math.random() * 60000),
-		residence_type: 'Rent', existing_debt: '', residence_details: '1BHK rented house',
-		insurance_type: 'No Insurance', insurance_coverage_details: '',
-		physical_verification: 'Yes', physical_verification_notes: 'Sample verification note.',
-		genuineness_assessment: 'Sample genuineness assessment.',
-		vulnerability_assessment: 'Sample vulnerability assessment.',
-		milaap_campaign_link: '', milaap_recommendation: '',
-		family_members: [
-			{ member_name: 'Sample Family Member', relationship: 'Spouse', age: '35', occupation: 'Homemaker', monthly_income: 0, qualification: '10th' }
-		],
-		supporting_documents: [
-			{ document_name: 'Aadhar card', attachment: '#', remarks: '' },
-			{ document_name: 'Supporting estimate', attachment: null, remarks: 'Not uploaded' }
-		],
-		case_approval_stage: [
-			{ case_approval_level_decription: 'L1 Reviewer', case_approval_status: row.case_status === 'Approved' ? 'Approve' : 'Awaiting For Approval', approver_name: row.approved_by || 'Sample Approver L1', approver_email: 'l1.approver@example.org' },
-			{ case_approval_level_decription: 'L2 Approver', case_approval_status: '', approver_name: 'Sample Approver L2', approver_email: 'l2.approver@example.org' }
-		],
-		case_approval_log: row.case_status === 'Approved' ? [
-			{ date: row.request_date, level: 'L1 Reviewer', approver_name: row.approved_by || 'Sample Approver', action: 'Approve', comments: 'Approved in sample data.' }
-		] : []
-	});
-}
-
-// ---------------------------------------------------------------
 // Dashboard
 // ---------------------------------------------------------------
 class SupportIIDDashboard {
 	constructor(page) {
 		this.page = page;
 		this.wrapper = $(page.body);
-		this.test_mode = false;
 		this.rows = [];
 		this.trend_granularity = 'month';
 		this.india_locations = null; // { states: [{state, districts}] } once loaded
@@ -532,9 +435,6 @@ class SupportIIDDashboard {
 			<div class="sd-page">
 				<div class="sd-toolbar">
 					<div class="sd-spacer"></div>
-					<label style="display:flex;align-items:center;gap:6px;font-size:12.5px;margin-bottom:0;color:var(--text-muted,#8d99a6)">
-						<input type="checkbox" id="sd-test-mode"> Test Mode (sample data)
-					</label>
 				</div>
 
 				<div class="sd-filter-bar">
@@ -706,10 +606,6 @@ class SupportIIDDashboard {
 	bind_events() {
 		var self = this;
 		this.wrapper.on('click', '#sd-refresh', function () { self.load_data(); });
-		this.wrapper.on('change', '#sd-test-mode', function () {
-			self.test_mode = $(this).is(':checked');
-			self.load_data();
-		});
 		this.wrapper.on('change', '#sd-f-source, #sd-f-status, #sd-f-state, #sd-f-district', function () {
 			self.apply_filters();
 		});
@@ -730,11 +626,6 @@ class SupportIIDDashboard {
 
 	load_data() {
 		var self = this;
-		if (this.test_mode) {
-			this.all_rows = generate_sample_dashboard_data();
-			this.apply_filters();
-			return;
-		}
 		frappe.call({
 			method: 'support_iid.api.dashboard.get_dashboard_data',
 			freeze: true,
@@ -1077,11 +968,6 @@ class SupportIIDDashboard {
 		}
 
 		function open_case(name) {
-			if (self.test_mode) {
-				var base = (self.all_rows || []).find((c) => c.name === name);
-				if (base) show_detail_mode(build_sample_case_detail(base));
-				return;
-			}
 			frappe.call({
 				method: 'frappe.client.get',
 				args: { doctype: 'Case Register', name: name },
@@ -1162,14 +1048,8 @@ class SupportIIDDashboard {
 
 		function trigger_export(file_format) {
 			// Export uses ALL matching rows (all pages) — not just the current page.
-			// In Test Mode, sample row IDs won't exist in the database, so we warn clearly
-			// instead of silently producing an empty file.
 			var all_names = get_visible_rows().map((c) => c.name);
 			if (!all_names.length) { frappe.show_alert({ message: 'No cases to export.', indicator: 'orange' }); return; }
-			if (self.test_mode) {
-				frappe.msgprint('Export generates a real server-side file and requires live data. Turn off Test Mode and reload the dashboard to export.');
-				return;
-			}
 			var params = { file_format: file_format, names: JSON.stringify(all_names) };
 			var url = frappe.urllib.get_full_url('/api/method/support_iid.api.dashboard.export_case_list?' + $.param(params));
 			var win = window.open(url, '_blank');
@@ -1308,39 +1188,6 @@ class SupportIIDDashboard {
 		var self = this;
 		var past = ACTION_PAST[action] || (action.toLowerCase() + 'd');
 
-		if (self.test_mode) {
-			var stages = doc.case_approval_stage || [];
-			var idx = -1;
-			for (var i = 0; i < stages.length; i++) {
-				var s = (stages[i].case_approval_status || '').trim();
-				if (s === '' || s === 'Awaiting For Approval') { idx = i; break; }
-			}
-			if (idx === -1) return;
-			stages[idx].case_approval_status = action;
-			doc.case_approval_log = doc.case_approval_log || [];
-			doc.case_approval_log.push({
-				date: frappe.datetime.get_today(), level: stages[idx].case_approval_level_decription || '',
-				approver_name: stages[idx].approver_name || frappe.session.user, action: action, comments: comments || ''
-			});
-			if (action === 'Decline') { doc.case_status = 'Rejected'; doc.current_approval_level = ''; }
-			else if (action === 'Send Back') { doc.case_status = 'Sent Back'; doc.current_approval_level = ''; }
-			else {
-				var remaining = stages.slice(idx + 1);
-				if (remaining.length) {
-					remaining[0].case_approval_status = 'Awaiting For Approval';
-					doc.case_status = 'Pending Approval';
-					doc.current_approval_level = remaining[0].case_approval_level_decription || 'next level';
-				} else {
-					doc.case_status = 'Approved';
-					doc.current_approval_level = '';
-					doc.approved_by = stages[idx].approver_name || frappe.session.user;
-				}
-			}
-			frappe.show_alert({ message: 'Case ' + past + ' (sample data — not saved).', indicator: 'green' });
-			onDone(doc);
-			return;
-		}
-
 		frappe.call({
 			method: 'support_iid.case_management.doctype.case_register.case_register.process_case_approval',
 			args: { case_name: doc.name, action: action, comments: comments },
@@ -1469,18 +1316,6 @@ class SupportIIDDashboard {
 	submit_close_case(doc, payload, onDone) {
 		var self = this;
 
-		if (self.test_mode) {
-			doc.case_status = 'Closed';
-			doc.date_of_transfer = frappe.datetime.get_today();
-			doc.approved_amount = payload.approved_amount ? parseFloat(payload.approved_amount) : doc.approved_amount;
-			doc.utr_details = payload.utr_details;
-			doc.milaap_recommendation = payload.milaap_recommendation;
-			doc.milaap_campaign_link = payload.milaap_campaign_link;
-			frappe.show_alert({ message: 'Case closed (sample data — not saved).', indicator: 'green' });
-			onDone(doc);
-			return;
-		}
-
 		frappe.call({
 			method: 'support_iid.case_management.doctype.case_register.case_register.close_case',
 			args: Object.assign({ case_name: doc.name }, payload),
@@ -1502,8 +1337,7 @@ class SupportIIDDashboard {
 
 	build_action_control_html(doc) {
 		var user = frappe.session.user;
-		var is_admin = this.test_mode ||
-			user === 'Administrator' ||
+		var is_admin = user === 'Administrator' ||
 			(frappe.user_roles || []).indexOf('System Manager') > -1;
 		var can_close = is_admin || (frappe.user_roles || []).indexOf('Reviewer') > -1;
 

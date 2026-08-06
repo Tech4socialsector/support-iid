@@ -46,9 +46,9 @@
   },
   {
    "fieldname": "action",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "label": "Action",
-   "options": "\nApprove\nDecline\nSend Back"
+   "options": "Case Approval Stage"
   },
   {
    "fieldname": "column_break_vrdc",
@@ -70,7 +70,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-30 11:18:28.503539",
+ "modified": "2026-08-06 15:23:27.035537",
  "modified_by": "Administrator",
  "module": "Master",
  "name": "Support IID Case Approval",
