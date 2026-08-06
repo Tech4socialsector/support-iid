@@ -35,7 +35,13 @@ const STATUS_COLOR = {
 // filters/data/comparisons everywhere) — this is the one place that
 // value should actually show something friendlier to a user: "Pending
 // with Requester" instead of the more passive "Sent Back".
-const STATUS_DISPLAY_LABELS = { 'Sent Back': 'Pending with Requester' };
+//
+// "Rejected" is flagged as a restricted/spam-trigger word by some
+// outgoing-mail providers — shown as "Declined" everywhere instead
+// (matching the wording already used for the Decline action). The
+// stored case_status value stays "Rejected" for data/filter
+// consistency.
+const STATUS_DISPLAY_LABELS = { 'Sent Back': 'Pending with Requester', 'Rejected': 'Declined' };
 function status_display_label(status) {
 	return STATUS_DISPLAY_LABELS[status] || status;
 }
@@ -411,7 +417,7 @@ class CaseListView {
 						<option value="">All statuses</option>
 						<option>Pending Approval</option>
 						<option>Approved</option>
-						<option>Rejected</option>
+						<option value="Rejected">Declined</option>
 						<option value="Sent Back">Pending with Requester</option>
 						<option>On Hold</option>
 						<option>Closed</option>

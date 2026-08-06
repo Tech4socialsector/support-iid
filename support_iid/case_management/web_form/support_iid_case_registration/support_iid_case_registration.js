@@ -1067,8 +1067,18 @@ frappe.ready(function () {
             frappe.web_form.fields.forEach(function (df) {
                 if (!df.fieldname) return;
                 if (df.fieldtype === 'Table') {
-                    // Table fields live directly on the doc, not via get_value.
-                    values[df.fieldname] = frappe.web_form.doc[df.fieldname] || [];
+                    // Table fields render from field.df.data (grids mutate
+                    // that directly as the user adds/removes rows or
+                    // re-attaches a file) — frappe.web_form.doc[fieldname]
+                    // is only a snapshot taken when the grid was first
+                    // populated and goes stale the moment the user edits a
+                    // row afterward. Reading it here silently dropped any
+                    // supporting document added/replaced during the edit
+                    // session, so the resubmit email only ever carried
+                    // whatever was in the doc at load time.
+                    var field = frappe.web_form.fields_dict[df.fieldname];
+                    var grid = field && field.grid;
+                    values[df.fieldname] = (grid && grid.get_data()) || frappe.web_form.doc[df.fieldname] || [];
                 } else {
                     values[df.fieldname] = frappe.web_form.get_value(df.fieldname);
                 }

@@ -48,6 +48,20 @@ ACTION_LABEL = {
     "Send Back": "Sent Back for Revision",
 }
 
+# Minimal "does this look like an email" check — deliberately loose (this
+# app already decided, per explicit product direction, not to enforce
+# strict email validation on freehand-typed approver fields). This only
+# guards against sending mail to something that is CLEARLY not an email
+# at all (e.g. a level code or a name that ended up in the wrong field by
+# mistake) — that class of value crashes smtplib.sendmail() with
+# SMTPRecipientsRefused and silently drops the whole email (all
+# recipients, all content) rather than just that one bad address.
+_EMAIL_SHAPE_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _looks_like_email(value):
+    return bool(_EMAIL_SHAPE_RE.match((value or "").strip()))
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Case Status — fixed set of values, each a record in the "Case Status List"
 # master doctype (Link options), so case_status no longer bakes the current
@@ -69,6 +83,13 @@ CASE_STATUS_WITHDRAWN = "Withdrawn by the Requester"
 # it is to act than the more passive "Sent Back".
 CASE_STATUS_DISPLAY_LABELS = {
     CASE_STATUS_SENT_BACK: "Pending with Requester",
+    # "Rejected" is flagged as a restricted/spam-trigger word by some
+    # outgoing-mail providers, causing emails using it in the subject or
+    # body to be filtered or blocked. Displayed as "Declined" everywhere
+    # instead, matching the wording already used for the Decline ACTION
+    # (ACTION_LABEL["Decline"] = "Declined") — the stored case_status
+    # value stays "Rejected" for data/filter consistency.
+    CASE_STATUS_REJECTED: "Declined",
 }
 
 
@@ -228,20 +249,19 @@ def send_approval_otp(token):
                 f"Dear {approver_name},",
                 "",
                 "This is an official communication from the Support IID program "
-                "at Azim Premji Foundation. Kindly use the One-Time Password "
-                "(OTP) provided below to verify your identity and proceed with "
-                "the case approval action:",
+                "at Azim Premji Foundation. Please use the One-Time Password "
+                "(OTP) below to verify your identity and proceed with the case "
+                "approval action.",
                 "",
                 f"{{{{code:{otp}}}}}",
                 "",
-                "This code is valid for 10 minutes and may be used only once. "
-                "We request that you do not share this code with anyone.",
+                "This OTP is valid for 10 minutes and can be used only once. "
+                "For your security, please do not share it with anyone, "
+                "including anyone claiming to represent Azim Premji "
+                "Foundation.",
                 "",
-                "If you did not request this code, no action is required on "
-                "your part — you may safely disregard this email.",
-                "",
-                "Warm regards,",
-                "Support IID Team",
+                "If you did not request this code, no action is required — "
+                "you may safely disregard this email.",
             ],
         )
     except Exception:
@@ -278,20 +298,19 @@ def send_edit_otp(token):
                 f"Dear {requestor_name},",
                 "",
                 "This is an official communication from the Support IID program "
-                "at Azim Premji Foundation. Kindly use the One-Time Password "
-                "(OTP) provided below to verify your identity and proceed with "
-                "editing and resubmitting your case:",
+                "at Azim Premji Foundation. Please use the One-Time Password "
+                "(OTP) below to verify your identity and proceed with editing "
+                "and resubmitting your case.",
                 "",
                 f"{{{{code:{otp}}}}}",
                 "",
-                "This code is valid for 10 minutes and may be used only once. "
-                "We request that you do not share this code with anyone.",
+                "This OTP is valid for 10 minutes and can be used only once. "
+                "For your security, please do not share it with anyone, "
+                "including anyone claiming to represent Azim Premji "
+                "Foundation.",
                 "",
-                "If you did not request this code, no action is required on "
-                "your part — you may safely disregard this email.",
-                "",
-                "Warm regards,",
-                "Support IID Team",
+                "If you did not request this code, no action is required — "
+                "you may safely disregard this email.",
             ],
         )
     except Exception:
@@ -328,20 +347,19 @@ def send_withdraw_otp(token):
                 f"Dear {requestor_name},",
                 "",
                 "This is an official communication from the Support IID program "
-                "at Azim Premji Foundation. Kindly use the One-Time Password "
-                "(OTP) provided below to verify your identity and proceed with "
-                "withdrawing your case:",
+                "at Azim Premji Foundation. Please use the One-Time Password "
+                "(OTP) below to verify your identity and proceed with "
+                "withdrawing your case.",
                 "",
                 f"{{{{code:{otp}}}}}",
                 "",
-                "This code is valid for 10 minutes and may be used only once. "
-                "We request that you do not share this code with anyone.",
+                "This OTP is valid for 10 minutes and can be used only once. "
+                "For your security, please do not share it with anyone, "
+                "including anyone claiming to represent Azim Premji "
+                "Foundation.",
                 "",
-                "If you did not request this code, no action is required on "
-                "your part — you may safely disregard this email.",
-                "",
-                "Warm regards,",
-                "Support IID Team",
+                "If you did not request this code, no action is required — "
+                "you may safely disregard this email.",
             ],
         )
     except Exception:
@@ -507,11 +525,10 @@ def _lines_to_html(lines):
         out.append(frappe.utils.escape_html(text[pos:]))
         return "".join(out)
 
-    # A line of the form "{{code:482913}}" renders as a standalone large
-    # monospace block instead of an inline sentence — emails can't have a
-    # working "copy" button, so this is the realistic equivalent: a code
-    # isolated on its own line, in a large enough/spaced-out font that a
-    # double or triple click reliably selects just the code to copy.
+    # A line of the form "{{code:482913}}" renders as a standalone bold
+    # code line instead of an inline sentence — deliberately plain (no
+    # card/background/icon) so it drops cleanly into any email client
+    # without looking like a styling experiment.
     code_line_re = re.compile(r"^\{\{code:([^}]+)\}\}$")
 
     parts = []
@@ -523,10 +540,8 @@ def _lines_to_html(lines):
         if code_match:
             code = frappe.utils.escape_html(code_match.group(1))
             parts.append(
-                '<div style="font-family:\'Courier New\',monospace;font-size:28px;'
-                'font-weight:bold;letter-spacing:6px;background:#f4f6f8;'
-                'border:1px solid #d9dce0;border-radius:6px;padding:12px 20px;'
-                'display:inline-block;margin:4px 0">' + code + "</div>"
+                '<div style="font-size:26px;font-weight:bold;letter-spacing:4px;'
+                'color:#1a1a1a">' + code + "</div>"
             )
             continue
         parts.append(f'<div>{render(line)}</div>')
@@ -1342,6 +1357,23 @@ class CaseRegister(Document):
             )
             return
 
+        if not _looks_like_email(approver_email):
+            # A value that isn't shaped like an email at all (e.g. a level
+            # code or a name landed in this field by mistake) crashes
+            # smtplib.sendmail() with SMTPRecipientsRefused and drops the
+            # WHOLE email — not just this recipient — since it's the only
+            # recipient on this send. Log clearly and skip rather than
+            # lose the requestor's PDF/acknowledgement email too, which
+            # would otherwise fail right alongside it if both are sent
+            # from the same calling code path.
+            frappe.log_error(
+                f"approver_email for stage {stage_idx} on {self.name} does not look like a "
+                f"valid email address: {approver_email!r} — approval email skipped. Check the "
+                f"Approval Hierarchy / Case Approval Stage data for this case and level.",
+                "Support IID approval email skipped — malformed approver_email",
+            )
+            return
+
         req_name = (
             getattr(self, "requestor_name", None) or
             getattr(self, "requestor_email", None) or
@@ -1426,51 +1458,53 @@ class CaseRegister(Document):
 
         requestor_name = getattr(self, "requestor_name", None) or "Team"
         beneficiary    = getattr(self, "beneficiary_name", None) or ""
-        case_url = f"{get_url()}/desk/case-registry#{self.name}"
+
+        action_line = None
 
         if action == "Approve":
             subject    = f"Case Approved - [{self.name}] - {beneficiary}"
             heading    = "**Your case has been approved.**"
             body_extra = (
                 f"Congratulations! This is the final level of approval, and "
-                f"the support request has been approved by "
-                f"**{approver_name or 'the review team'}**. The team will be in "
-                f"touch regarding disbursement details."
+                f"the support request for {beneficiary or 'the beneficiary'} "
+                f"has been approved by **{approver_name or 'the review team'}**. "
+                f"Our team will be in touch shortly regarding disbursement "
+                f"details."
             )
-            action_line = f"[View Case]({case_url})"
         elif action == "Decline":
             subject    = f"Case Declined - [{self.name}] - {beneficiary}"
             heading    = "**Your case has been declined.**"
             body_extra = (
-                "We regret to inform you that after careful review the "
-                "support request could not be approved at this time."
+                f"We regret to inform you that after careful review, the "
+                f"support request for {beneficiary or 'the beneficiary'} "
+                f"could not be approved at this time."
             )
-            action_line = f"[View Case]({case_url})"
         else:  # Send Back
             subject    = f"Case Returned for Revision - [{self.name}] - {beneficiary}"
             heading    = "**Your case has been returned for revision.**"
             body_extra = (
                 "The reviewer has requested additional information or "
-                "changes before the case can proceed. Please review the "
-                "notes below, update the details, and resubmit."
+                "changes before this case can proceed. Please review the "
+                "notes below, update the details, and resubmit at your "
+                "earliest convenience."
             )
             if stage_idx is not None:
                 edit_token = make_edit_token(self.name, requestor_email, stage_idx)
                 edit_url = f"{get_url()}/support-iid-case-registration/new?token={edit_token}"
                 action_line = f"[Edit and Resubmit]({edit_url})"
-            else:
-                action_line = f"[View Case]({case_url})"
 
         lines = [
             f"Dear {requestor_name},",
             "",
             heading,
+            f"**Case ID:** {self.name}",
             "",
             body_extra,
         ]
         if comments:
             lines += ["", "**Reviewer notes:**", comments]
-        lines += ["", action_line, "", "Regards,", "Support IID Team"]
+        if action_line:
+            lines += ["", action_line]
 
         try:
             _send_plain_email(
@@ -1512,20 +1546,20 @@ class CaseRegister(Document):
         lines = [
             f"Dear {requestor_name},",
             "",
-            f"**Your support request for {beneficiary or 'the beneficiary'} has been received.**",
+            f"Thank you for submitting your support request. This is to "
+            f"confirm that your request for {beneficiary or 'the beneficiary'} "
+            f"has been received.",
             f"**Case ID:** {self.name}",
             "",
-            f"It is now pending **{level_label}** approval. You will receive an update by "
-            f"email as the case moves through review.",
+            f"Your request is now pending **{level_label}** approval. You "
+            f"will receive an email update as it moves through the review "
+            f"process.",
             "",
             "A copy of the case summary is attached for your records.",
             "",
-            "If you no longer need this request, you can withdraw it at any "
-            "time before a final decision is made:",
+            "If you no longer need this request, you may withdraw it at "
+            "any time before a final decision is made:",
             f"[Withdraw this case]({withdraw_url})",
-            "",
-            "Regards,",
-            "Support IID Team",
         ]
 
         attachments = []
@@ -1574,18 +1608,16 @@ class CaseRegister(Document):
         lines = [
             f"Dear {requestor_name},",
             "",
-            f"**You have submitted the updates for case {self.name}.**",
+            f"This is to confirm that your updates to case {self.name} have "
+            f"been received and resubmitted successfully.",
             "",
-            f"The revised support request for {beneficiary or 'the beneficiary'} has been "
-            f"resubmitted and is now pending **{level_label or 'approval'}**. You will "
-            f"receive an update by email as the case moves through review.",
+            f"The revised support request for {beneficiary or 'the beneficiary'} "
+            f"is now pending **{level_label or 'approval'}**. You will receive "
+            f"an email update as it moves through the review process.",
             "",
-            "If you no longer need this request, you can withdraw it at any "
-            "time before a final decision is made:",
+            "If you no longer need this request, you may withdraw it at "
+            "any time before a final decision is made:",
             f"[Withdraw this case]({withdraw_url})",
-            "",
-            "Regards,",
-            "Support IID Team",
         ]
 
         try:
@@ -1702,6 +1734,9 @@ class CaseRegister(Document):
         lines = [
             f"Dear {approver_name},",
             "",
+            "A support request is awaiting your review as part of the "
+            "Support IID approval process.",
+            "",
             intro_sentence,
             "",
         ]
@@ -1728,14 +1763,17 @@ class CaseRegister(Document):
             lines.append(f"**Campaign link:** [View Milaap Campaign]({milaap_link})")
         lines.append(f"**Milaap recommendation:** {milaap_rec or '-'}")
         lines.append("")
-        lines.append("The full case summary PDF and all supporting documents are attached.")
-        lines.append("Please review and take appropriate action using the link below.")
+        lines.append(
+            "The full case summary PDF and all supporting documents are "
+            "attached for your reference."
+        )
+        lines.append(
+            "Please review the request and record your decision using the "
+            "link below:"
+        )
         lines.append("")
         lines.append(f"[Review & Approve / Decline / Send Back]({webform_url})")
         lines.append(f"[View in Case Registry]({registry_url})")
-        lines.append("")
-        lines.append("Regards,")
-        lines.append("Support IID Team")
 
         return lines
 
@@ -2027,15 +2065,13 @@ def withdraw_case(token, reason=None, otp=None, verify_ticket=None):
             lines=[
                 f"Dear {doc.requestor_name or 'Team'},",
                 "",
-                f"**You have withdrawn case {doc.name}.**",
+                f"This is to confirm that case {doc.name} has been withdrawn "
+                f"at your request.",
                 "",
                 f"**Reason:** {reason}",
                 "",
-                "No further action will be taken on this case. If this was a "
-                "mistake, please submit a new request.",
-                "",
-                "Regards,",
-                "Support IID Team",
+                "No further action will be taken on this case. If this was "
+                "done in error, please feel free to submit a new request.",
             ],
         )
     except Exception:
@@ -2073,16 +2109,14 @@ def _notify_reviewers_of_withdrawal(doc, reason):
             lines=[
                 "Dear Reviewer,",
                 "",
-                f"**Case {doc.name} has been withdrawn by the requestor.**",
+                f"This is to inform you that case {doc.name} has been "
+                f"withdrawn by the requestor.",
+                "",
                 f"**Beneficiary:** {doc.beneficiary_name or '-'}",
                 f"**Requestor:** {doc.requestor_name or '-'} ({doc.requestor_email or '-'})",
-                "",
                 f"**Reason given:** {reason}",
                 "",
                 "No further action is needed on this case.",
-                "",
-                "Regards,",
-                "Support IID Team",
             ],
         )
     except Exception:
