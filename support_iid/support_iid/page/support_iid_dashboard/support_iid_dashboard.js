@@ -774,19 +774,15 @@ class SupportIIDDashboard {
 		var rows = this.rows;
 		var self = this;
 
-		var approved_rows = rows.filter((c) => c.case_status === 'Approved');
+		// Approved Amount totals every case that has actually cleared
+		// approval — both cases still sitting at Approved (awaiting
+		// disbursement/closure) and cases that have since been Closed —
+		// not just the ones still in the Approved state.
+		var approved_rows = rows.filter((c) => c.case_status === 'Approved' || c.case_status === 'Closed');
 		var declined_rows = rows.filter((c) => c.case_status === 'Rejected');
-		var disbursed_rows = rows.filter((c) => c.status_of_milaap_transfer === 'Fully Disbursed');
 		var total_approved_value = approved_rows.reduce((s, c) => s + case_amount(c), 0);
 		var total_requested_value = rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
-		var total_declined_value = declined_rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
-		// Fully Disbursed only — Partially Disbursed cases don't record how
-		// much of the approved amount actually went out, so including them
-		// against the full approved_amount would overstate what was
-		// actually disbursed.
-		var total_disbursed_value = disbursed_rows.reduce(
-			(s, c) => s + Math.max(0, case_amount(c) - (c.refund_amount_if_any || 0)), 0
-		);
+		var total_declined_value = declined_rows.reduce((s, c) => s + case_amount(c), 0);
 		var in_progress_rows = rows.filter((c) => is_in_progress(c.case_status));
 
 		var financial_cards = [
@@ -797,18 +793,13 @@ class SupportIIDDashboard {
 			},
 			{
 				icon: '₹', label: 'Total Approved Amount', value: format_currency(total_approved_value),
-				sub: approved_rows.length + ' approved case(s)',
-				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved')
+				sub: approved_rows.length + ' approved/closed case(s)',
+				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved' || c.case_status === 'Closed')
 			},
 			{
 				icon: icon('xCircle', 18), label: 'Total Declined Amount', value: format_currency(total_declined_value),
 				sub: declined_rows.length + ' declined case(s)',
 				click: () => self.open_drilldown('Declined cases', (c) => c.case_status === 'Rejected')
-			},
-			{
-				icon: icon('checkCircle', 18), label: 'Total Disbursed Amount', value: format_currency(total_disbursed_value),
-				sub: disbursed_rows.length + ' fully disbursed case(s)',
-				click: () => self.open_drilldown('Fully disbursed cases', (c) => c.status_of_milaap_transfer === 'Fully Disbursed')
 			}
 		];
 

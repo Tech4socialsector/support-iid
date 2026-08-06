@@ -31,6 +31,7 @@ import json
 import os
 import re
 import secrets
+import smtplib
 
 import frappe
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -707,11 +708,32 @@ def _send_raw_email(recipients, subject, html_body, attachments=None, inline_ima
         root.attach(part)
 
     smtp = email_account.get_smtp_server()
-    # smtplib.sendmail() only *raises* if EVERY recipient was refused —
-    # if some succeeded and others didn't, it returns a dict of the
-    # refused ones instead, which we'd otherwise silently ignore and
-    # report as "sent" even though delivery to that recipient failed.
-    refused = smtp.session.sendmail(sender_email, list(recipients), root.as_string())
+    # smtplib.sendmail() only *raises* (SMTPRecipientsRefused) if EVERY
+    # recipient was refused — if some succeeded and others didn't, it
+    # returns a dict of the refused ones instead, which we'd otherwise
+    # silently ignore and report as "sent" even though delivery to that
+    # recipient failed.
+    #
+    # Approver/requestor email addresses on this app are taken as typed,
+    # with no format/domain validation (see this function's and
+    # _send_plain_email's docstrings) — so an address that is not
+    # deliverable at all (e.g. a name typed into the wrong field) is an
+    # EXPECTED failure mode here, not a programming error, and must not
+    # propagate out of this function: every caller of _send_plain_email/
+    # _send_raw_email would otherwise need its own try/except to avoid a
+    # single bad address crashing the whole request (case creation,
+    # approval action, resubmit, ...), which is exactly the class of bug
+    # this app has repeatedly hit. Guarding it here, at the lowest level,
+    # makes that impossible regardless of what any given caller does.
+    try:
+        refused = smtp.session.sendmail(sender_email, list(recipients), root.as_string())
+    except smtplib.SMTPRecipientsRefused as e:
+        frappe.log_error(
+            f"SMTP refused ALL recipients for this email.\n"
+            f"Subject: {subject}\nRecipients: {recipients}\nRefused: {e.recipients}",
+            "Support IID email rejected by SMTP server — all recipients refused",
+        )
+        return
     if refused:
         frappe.log_error(
             f"SMTP send accepted for some recipients but refused for others.\n"
