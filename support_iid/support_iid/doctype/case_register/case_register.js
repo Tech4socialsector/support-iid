@@ -486,20 +486,45 @@ function mark_mandatory_document_rows(frm) {
 // (grid_row.on_grid_fields_dict) directly, plus the grid-level
 // docfields template (for rows added afterward, whose set_docfields()
 // copies from it) to cover new rows without re-running this per row.
-function force_private_attachments(frm) {
-	var attach_options = { make_attachments_public: 0, allow_toggle_private: false };
+// Patches every place an "attachment" docfield object can independently
+// live for this grid: grid.docfields (the grid-level column template),
+// grid_row.docfields (each ROW's own SEPARATE copy — GridRow.set_docfields()
+// builds this via frappe.meta.get_docfields()/get_docfield_copy(), cached
+// per row NAME, entirely independent of grid.docfields — see setup_columns()
+// in frappe/public/js/frappe/form/grid_row.js, which reads column.df from
+// THIS copy, not the grid's), and grid_row.on_grid_fields_dict.attachment
+// (the actual live Control instance, but populated LAZILY only once that
+// row's cell has been focused/rendered at least once — make_control() in
+// grid_row.js — so a row that was never yet clicked into won't have this
+// key at all when refresh() runs). Missing any one of these three still
+// leaves an unpatched df somewhere a real upload dialog can be opened
+// from — which is exactly why this kept resurfacing under different
+// timing (e.g. a slower Graph API round-trip on a production/cloud
+// deployment adding rows well after the very first refresh() already ran).
+function _case_register_patch_attachment_df(df) {
+	if (df) df.options = { make_attachments_public: 0, allow_toggle_private: false };
+}
 
+function force_private_attachments(frm) {
 	var grid = frm.fields_dict.supporting_documents && frm.fields_dict.supporting_documents.grid;
 	if (grid) {
 		if (grid.docfields) {
-			var template_df = grid.docfields.find(function (df) {
-				return df.fieldname === "attachment";
-			});
-			if (template_df) template_df.options = attach_options;
+			_case_register_patch_attachment_df(
+				grid.docfields.find(function (df) {
+					return df.fieldname === "attachment";
+				})
+			);
 		}
 		(grid.grid_rows || []).forEach(function (grid_row) {
+			if (grid_row.docfields) {
+				_case_register_patch_attachment_df(
+					grid_row.docfields.find(function (df) {
+						return df.fieldname === "attachment";
+					})
+				);
+			}
 			var field = grid_row.on_grid_fields_dict && grid_row.on_grid_fields_dict.attachment;
-			if (field && field.df) field.df.options = attach_options;
+			if (field) _case_register_patch_attachment_df(field.df);
 		});
 	}
 
@@ -508,9 +533,7 @@ function force_private_attachments(frm) {
 	// permlevel-2 (Reviewer/System Manager only) — hides the same
 	// toggle here too in case either of them ever manually re-attaches it.
 	var case_document_field = frm.get_field("case_document");
-	if (case_document_field) {
-		case_document_field.df.options = attach_options;
-	}
+	if (case_document_field) _case_register_patch_attachment_df(case_document_field.df);
 }
 
 // ── Inline field-error display ───────────────────────────────────────────

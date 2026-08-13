@@ -1,0 +1,41 @@
+[
+ {
+  "docstatus": 0,
+  "doctype": "Documents list",
+  "is_mandatory": 0,
+  "modified": "2026-07-24 09:49:44.648026",
+  "name": "Test Doc",
+  "type_of_request_list": [
+   {
+    "type_of_request": "Education"
+   }
+  ]
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Documents list",
+  "is_mandatory": 0,
+  "modified": "2026-07-23 16:20:32.336079",
+  "name": "Educational documents",
+  "type_of_request_list": [
+   {
+    "type_of_request": "Medical"
+   },
+   {
+    "type_of_request": "Education"
+   }
+  ]
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Documents list",
+  "is_mandatory": 0,
+  "modified": "2026-07-20 17:51:05.026195",
+  "name": "Bank statement",
+  "type_of_request_list": [
+   {
+    "type_of_request": "Education"
+   }
+  ]
+ }
+]

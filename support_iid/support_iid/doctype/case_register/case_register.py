@@ -1906,12 +1906,21 @@ class CaseRegister(Document):
 
 	# ── Requestor notification email  (sent after final decisions) ────────────
 
-	def _send_requestor_notification_email(self, action, comments=None, approver_name=None, stage_idx=None):
+	def _send_requestor_notification_email(
+		self, action, comments=None, approver_name=None, stage_idx=None, next_level_label=None
+	):
 		"""
-		Plain-text notification to the requestor after Approve / Decline /
-		Send Back. On Send Back, includes an edit-and-resubmit link (token +
+		Plain-text notification to the requestor after every approval-chain
+		transaction — Approve (whether it's an intermediate level moving
+		the case on, or the final level closing it out) / Decline / Send
+		Back. On Send Back, includes an edit-and-resubmit link (token +
 		OTP protected) so the requestor can correct and resend the case to
 		the same approval level that returned it.
+
+		next_level_label is only set for an intermediate Approve (more
+		stages remain) — distinguishes it from a final Approve, which
+		otherwise looks identical (same action string) but means something
+		different to the requestor: "still in progress" vs. "fully done".
 
 		stage_idx must be the exact stage that just performed this action —
 		passed in by the caller (which already knows it), rather than
@@ -1936,7 +1945,20 @@ class CaseRegister(Document):
 
 		action_line = None
 
-		if action == "Approve":
+		if action == "Approve" and next_level_label:
+			# Intermediate approval — more levels still to go. Distinct
+			# from the final Approve below: same action string, but this
+			# is "still in progress", not "fully done".
+			subject = f"Case Update - [{self.name}] - {beneficiary}"
+			heading = "**Your case has moved to the next approval level.**"
+			body_extra = (
+				f"The support request for {beneficiary or 'the beneficiary'} "
+				f"has been approved by **{approver_name or 'the review team'}** "
+				f"and is now pending **{next_level_label}** approval. You will "
+				f"receive another update as it continues through the review "
+				f"process."
+			)
+		elif action == "Approve":
 			subject = f"Case Approved - [{self.name}] - {beneficiary}"
 			heading = "**Your case has been approved.**"
 			body_extra = (
@@ -2465,6 +2487,17 @@ def process_case_approval(
 				include_supporting_docs=True,
 				previous_action=action,
 				previous_comments=comments,
+			)
+			# ...and the requestor, too — previously only the final Approve/
+			# Decline/Send Back notified them, so an intermediate level
+			# approving (case moving from Level 1 to Level 2, say) was the
+			# one transaction in the whole chain the requestor never heard
+			# about at all.
+			doc._send_requestor_notification_email(
+				action="Approve",
+				comments=comments,
+				approver_name=approver_name,
+				next_level_label=next_level,
 			)
 
 		else:
