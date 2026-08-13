@@ -169,7 +169,7 @@ frappe.ready(function () {
     function fetchCaseForEdit() {
         isPrefilling = true;
         frappe.call({
-            method: 'support_iid.case_management.doctype.case_register.case_register.resolve_case_for_edit',
+            method: 'support_iid.support_iid.doctype.case_register.case_register.resolve_case_for_edit',
             args: { token: editToken },
             callback: function (r) {
                 if (!r.message) return;
@@ -263,7 +263,7 @@ frappe.ready(function () {
         $sendBtn.on('click', function () {
             $sendBtn.prop('disabled', true).text('Sending...');
             frappe.call({
-                method: 'support_iid.case_management.doctype.case_register.case_register.send_edit_otp',
+                method: 'support_iid.support_iid.doctype.case_register.case_register.send_edit_otp',
                 args: { token: editToken },
                 callback: function (r) {
                     if (r.message && r.message.sent) {
@@ -288,7 +288,7 @@ frappe.ready(function () {
             }
             $verifyBtn.prop('disabled', true).text('Verifying...');
             frappe.call({
-                method: 'support_iid.case_management.doctype.case_register.case_register.verify_edit_otp',
+                method: 'support_iid.support_iid.doctype.case_register.case_register.verify_edit_otp',
                 args: { token: editToken, otp: otp },
                 callback: function (r) {
                     if (r.message && r.message.verify_ticket) {
@@ -1101,7 +1101,7 @@ frappe.ready(function () {
             });
 
             frappe.call({
-                method: 'support_iid.case_management.doctype.case_register.case_register.submit_case_edit',
+                method: 'support_iid.support_iid.doctype.case_register.case_register.submit_case_edit',
                 args: {
                     token: editToken,
                     verify_ticket: editVerifyTicket,

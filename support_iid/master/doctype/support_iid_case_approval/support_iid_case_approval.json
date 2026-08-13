@@ -46,9 +46,9 @@
   },
   {
    "fieldname": "action",
-   "fieldtype": "Link",
+   "fieldtype": "Select",
    "label": "Action",
-   "options": "Case Approval Stage"
+   "options": "\nApprove\nDecline\nSend Back"
   },
   {
    "fieldname": "column_break_vrdc",

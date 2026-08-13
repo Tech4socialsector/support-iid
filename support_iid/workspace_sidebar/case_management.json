@@ -1,0 +1,53 @@
+{
+ "app": "support_iid",
+ "creation": "2026-08-11 11:08:35.508742",
+ "docstatus": 0,
+ "doctype": "Workspace Sidebar",
+ "header_icon": "folder-normal",
+ "idx": 0,
+ "items": [
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "layout-dashboard",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Support IID Dashboard",
+   "link_to": "support-iid-dashboard",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 1,
+   "collapsible": 1,
+   "icon": "file-text",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Case Register",
+   "link_to": "Case Register",
+   "link_type": "DocType",
+   "show_arrow": 0,
+   "type": "Link"
+  },
+  {
+   "child": 0,
+   "collapsible": 1,
+   "icon": "table",
+   "indent": 0,
+   "keep_closed": 0,
+   "label": "Case Registry",
+   "link_to": "case-registry",
+   "link_type": "Page",
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "modified": "2026-08-11 11:50:54.140172",
+ "modified_by": "augustin.moses@azimpremjifoundation.org",
+ "module": "Support IID",
+ "name": "Case Management",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Case Management"
+}

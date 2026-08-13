@@ -59,7 +59,7 @@ frappe.ready(function () {
 
     function resolveToken(tok) {
         frappe.call({
-            method: 'support_iid.case_management.doctype.case_register.case_register.resolve_withdraw_token',
+            method: 'support_iid.support_iid.doctype.case_register.case_register.resolve_withdraw_token',
             args: { token: tok },
             callback: function (r) {
                 if (!r.message) return;
@@ -163,7 +163,7 @@ frappe.ready(function () {
         $sendBtn.on('click', function () {
             $sendBtn.prop('disabled', true).text('Sending...');
             frappe.call({
-                method: 'support_iid.case_management.doctype.case_register.case_register.send_withdraw_otp',
+                method: 'support_iid.support_iid.doctype.case_register.case_register.send_withdraw_otp',
                 args: { token: token },
                 callback: function (r) {
                     if (r.message && r.message.sent) {
@@ -195,7 +195,7 @@ frappe.ready(function () {
             }
             $verifyBtn.prop('disabled', true).text('Verifying...');
             frappe.call({
-                method: 'support_iid.case_management.doctype.case_register.case_register.verify_withdraw_otp',
+                method: 'support_iid.support_iid.doctype.case_register.case_register.verify_withdraw_otp',
                 args: { token: token, otp: otp },
                 callback: function (r) {
                     if (r.message && r.message.verify_ticket) {
@@ -257,7 +257,7 @@ frappe.ready(function () {
         }
 
         frappe.call({
-            method: 'support_iid.case_management.doctype.case_register.case_register.withdraw_case',
+            method: 'support_iid.support_iid.doctype.case_register.case_register.withdraw_case',
             args: {
                 token:         token,
                 verify_ticket: verify_ticket,

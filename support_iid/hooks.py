@@ -94,7 +94,7 @@ fixtures = [
 	"Documents list",
 	"Qualification",
 	"Family Member Relationship",
-	{"dt": "Role", "filters": [["name", "in", ["Support IID Approver", "Reviewer"]]]},
+	{"dt": "Role", "filters": [["name", "in", ["Support IID Approver", "Reviewer", "Requester"]]]},
 ]
 
 # Installation
@@ -141,13 +141,13 @@ fixtures = [
 # -----------
 # Permissions evaluated in scripted ways
 
-# permission_query_conditions = {
-# 	"Event": "frappe.desk.doctype.event.event.get_permission_query_conditions",
-# }
-#
-# has_permission = {
-# 	"Event": "frappe.desk.doctype.event.event.has_permission",
-# }
+permission_query_conditions = {
+	"Case Register": "support_iid.support_iid.doctype.case_register.case_register.get_permission_query_conditions",
+}
+
+has_permission = {
+	"Case Register": "support_iid.support_iid.doctype.case_register.case_register.has_permission",
+}
 
 # Document Events
 # ---------------
@@ -270,4 +270,3 @@ fixtures = [
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

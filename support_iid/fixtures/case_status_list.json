@@ -40,5 +40,11 @@
   "doctype": "Case Status List",
   "modified": "2026-08-04 16:34:43.208370",
   "name": "Withdrawn by the Requester"
+ },
+ {
+  "docstatus": 0,
+  "doctype": "Case Status List",
+  "modified": "2026-08-11 00:00:00.000000",
+  "name": "Draft"
  }
 ]

@@ -2,7 +2,6 @@ import re
 
 import frappe
 
-
 CASE_STATUS_VALUES = [
 	"Pending Approval",
 	"Approved",
@@ -23,16 +22,16 @@ def execute():
 	"""
 	for status in CASE_STATUS_VALUES:
 		if not frappe.db.exists("Case Status List", status):
-			frappe.get_doc({
-				"doctype": "Case Status List",
-				"name": status,
-			}).insert(ignore_permissions=True)
+			frappe.get_doc(
+				{
+					"doctype": "Case Status List",
+					"name": status,
+				}
+			).insert(ignore_permissions=True)
 
 	pending_re = re.compile(r"^Pending Approval\s*-\s*(.+)$")
 
-	for row in frappe.db.get_all(
-		"Case Register", fields=["name", "case_status"]
-	):
+	for row in frappe.db.get_all("Case Register", fields=["name", "case_status"]):
 		old_status = (row.case_status or "").strip()
 		if not old_status:
 			continue

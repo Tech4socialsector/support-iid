@@ -40,7 +40,9 @@ def execute():
 			continue
 		module_folder = frappe.scrub(module)
 		web_form_folder = frappe.scrub(web_form_name)
-		json_path = os.path.join(app_path, module_folder, "web_form", web_form_folder, f"{web_form_folder}.json")
+		json_path = os.path.join(
+			app_path, module_folder, "web_form", web_form_folder, f"{web_form_folder}.json"
+		)
 		if os.path.exists(json_path):
 			import_file_by_path(json_path, force=True)
 

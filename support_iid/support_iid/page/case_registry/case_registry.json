@@ -4,13 +4,23 @@
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2026-08-03 10:34:39.937558",
+ "modified": "2026-08-13 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "case-registry",
  "owner": "Administrator",
  "page_name": "case-registry",
- "roles": [],
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Reviewer"
+  },
+  {
+   "role": "Support IID Approver"
+  }
+ ],
  "script": null,
  "standard": "Yes",
  "style": null,

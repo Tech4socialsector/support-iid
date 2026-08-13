@@ -10,8 +10,10 @@ def execute():
 	the cases where they appear as an approver.
 	"""
 	if not frappe.db.exists("Role", "Support IID Approver"):
-		frappe.get_doc({
-			"doctype": "Role",
-			"role_name": "Support IID Approver",
-			"desk_access": 1,
-		}).insert(ignore_permissions=True)
+		frappe.get_doc(
+			{
+				"doctype": "Role",
+				"role_name": "Support IID Approver",
+				"desk_access": 1,
+			}
+		).insert(ignore_permissions=True)

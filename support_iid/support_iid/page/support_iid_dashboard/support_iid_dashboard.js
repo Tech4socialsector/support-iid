@@ -452,12 +452,6 @@ class SupportIIDDashboard {
 							</select>
 						</div>
 						<div class="sd-filter-item">
-							<label>Status</label>
-							<select id="sd-f-status" class="form-control">
-								<option value="">All statuses</option>
-							</select>
-						</div>
-						<div class="sd-filter-item">
 							<label>State</label>
 							<select id="sd-f-state" class="form-control">
 								<option value="">All states</option>
@@ -531,13 +525,17 @@ class SupportIIDDashboard {
 				this.render_metrics();
 			});
 
+		// No longer a filter dropdown — Status is shown as one Case
+		// Overview card per status instead (see render_metrics), so this
+		// only needs the plain list of status names for that. "Draft"
+		// is excluded defensively even though nothing currently creates a
+		// case in that status — a card for it would be meaningless (no
+		// case is ever left sitting there for a user to act on).
 		frappe.db.get_list('Case Status List', { fields: ['name'], limit_page_length: 0 })
 			.then((rows) => {
-				var sel = this.wrapper.find('#sd-f-status');
-				(rows || []).forEach((r) => {
-					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(status_display_label(r.name))}</option>`);
-				});
-				this.case_statuses = (rows || []).map((r) => r.name);
+				this.case_statuses = (rows || [])
+					.map((r) => r.name)
+					.filter((name) => name !== 'Draft');
 				this.render_metrics();
 			});
 
@@ -611,11 +609,11 @@ class SupportIIDDashboard {
 	bind_events() {
 		var self = this;
 		this.wrapper.on('click', '#sd-refresh', function () { self.load_data(); });
-		this.wrapper.on('change', '#sd-f-source, #sd-f-type, #sd-f-status, #sd-f-state, #sd-f-district', function () {
+		this.wrapper.on('change', '#sd-f-source, #sd-f-type, #sd-f-state, #sd-f-district', function () {
 			self.apply_filters();
 		});
 		this.wrapper.on('click', '#sd-f-clear', function () {
-			self.wrapper.find('#sd-f-source, #sd-f-type, #sd-f-status, #sd-f-state, #sd-f-district').val('');
+			self.wrapper.find('#sd-f-source, #sd-f-type, #sd-f-state, #sd-f-district').val('');
 			self.from_control.set_value('');
 			self.upto_control.set_value('');
 			self.apply_filters();
@@ -645,7 +643,6 @@ class SupportIIDDashboard {
 	apply_filters() {
 		var source = this.wrapper.find('#sd-f-source').val();
 		var type = this.wrapper.find('#sd-f-type').val();
-		var status = this.wrapper.find('#sd-f-status').val();
 		var district = (this.wrapper.find('#sd-f-district').val() || '').trim().toLowerCase();
 		var state = (this.wrapper.find('#sd-f-state').val() || '').trim().toLowerCase();
 		var from_date = this.from_control ? this.from_control.get_value() : '';
@@ -654,7 +651,6 @@ class SupportIIDDashboard {
 		this.rows = (this.all_rows || []).filter((c) => {
 			if (source && c.source_of_request !== source) return false;
 			if (type && c.type_of_request !== type) return false;
-			if (status && c.case_status !== status) return false;
 			if (district && (c.district || '').toLowerCase().indexOf(district) === -1) return false;
 			if (state && (c.state || '').toLowerCase().indexOf(state) === -1) return false;
 			if (from_date && c.request_date && c.request_date < from_date) return false;
@@ -678,9 +674,14 @@ class SupportIIDDashboard {
 		// not just the ones still in the Approved state.
 		var approved_rows = rows.filter((c) => c.case_status === 'Approved' || c.case_status === 'Closed');
 		var declined_rows = rows.filter((c) => c.case_status === 'Rejected');
+		var pending_rows = rows.filter((c) => c.case_status === 'Pending Approval');
 		var total_approved_value = approved_rows.reduce((s, c) => s + case_amount(c), 0);
 		var total_requested_value = rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
 		var total_declined_value = declined_rows.reduce((s, c) => s + case_amount(c), 0);
+		// Cases still awaiting a decision have no approved_amount yet —
+		// this totals what's actually been requested, not case_amount()'s
+		// approved-amount-first fallback (which would always be 0 here).
+		var total_pending_value = pending_rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
 		var in_progress_rows = rows.filter((c) => is_in_progress(c.case_status));
 
 		var financial_cards = [
@@ -688,6 +689,11 @@ class SupportIIDDashboard {
 				icon: icon('barChart', 18), label: 'Total Requested Amount', value: format_currency(total_requested_value),
 				sub: rows.length + ' total case(s)',
 				click: () => self.open_drilldown('All cases', () => true)
+			},
+			{
+				icon: icon('clock', 18), label: 'Pending for Approval Amount', value: format_currency(total_pending_value),
+				sub: pending_rows.length + ' pending case(s)',
+				click: () => self.open_drilldown('Pending approval cases', (c) => c.case_status === 'Pending Approval')
 			},
 			{
 				icon: '₹', label: 'Total Approved Amount', value: format_currency(total_approved_value),
@@ -1196,7 +1202,7 @@ class SupportIIDDashboard {
 		var past = ACTION_PAST[action] || (action.toLowerCase() + 'd');
 
 		frappe.call({
-			method: 'support_iid.case_management.doctype.case_register.case_register.process_case_approval',
+			method: 'support_iid.support_iid.doctype.case_register.case_register.process_case_approval',
 			args: { case_name: doc.name, action: action, comments: comments },
 			freeze: true,
 			freeze_message: 'Processing...',
@@ -1324,7 +1330,7 @@ class SupportIIDDashboard {
 		var self = this;
 
 		frappe.call({
-			method: 'support_iid.case_management.doctype.case_register.case_register.close_case',
+			method: 'support_iid.support_iid.doctype.case_register.case_register.close_case',
 			args: Object.assign({ case_name: doc.name }, payload),
 			freeze: true,
 			freeze_message: 'Closing case...',

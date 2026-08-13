@@ -27,8 +27,8 @@ const CASE_LIST_FIELDS = [
 
 const STATUS_COLOR = {
 	'Draft': 'gray', 'Submitted': 'blue', 'Rejected': 'red',
-	'Sent Back': 'orange', 'On Hold': 'orange', 'Closed': 'gray',
-	'Approved': 'green'
+	'Sent Back': 'yellow', 'On Hold': 'orange', 'Closed': 'gray',
+	'Approved': 'green', 'Withdrawn by the Requester': 'gray'
 };
 
 // The stored case_status value stays "Sent Back" (Link value, used in
@@ -74,7 +74,7 @@ const INDIA_LOCATION_URL = 'https://raw.githubusercontent.com/sab99r/Indian-Stat
 
 const STATUS_HEX = {
 	gray: '#9aa1a8', blue: '#2490ef', orange: '#e29a3d',
-	green: '#2f9e5b', red: '#e0524c', purple: '#8a63d2'
+	green: '#2f9e5b', red: '#e0524c', purple: '#8a63d2', yellow: '#d4b106'
 };
 
 function relative_date(date_str) {
@@ -1010,7 +1010,7 @@ class CaseListView {
 		}
 
 		frappe.call({
-			method: 'support_iid.case_management.doctype.case_register.case_register.process_case_approval',
+			method: 'support_iid.support_iid.doctype.case_register.case_register.process_case_approval',
 			args: { case_name: doc.name, action: action, comments: comments },
 			freeze: true,
 			freeze_message: 'Processing...',
@@ -1105,7 +1105,7 @@ class CaseListView {
 		}
 
 		frappe.call({
-			method: 'support_iid.case_management.doctype.case_register.case_register.close_case',
+			method: 'support_iid.support_iid.doctype.case_register.case_register.close_case',
 			args: Object.assign({ case_name: doc.name }, payload),
 			freeze: true,
 			freeze_message: 'Closing case...',

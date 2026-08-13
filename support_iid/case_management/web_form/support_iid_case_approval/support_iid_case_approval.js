@@ -78,7 +78,7 @@ frappe.ready(function () {
 
     function resolveToken(tok) {
         frappe.call({
-            method: 'support_iid.case_management.doctype.case_register.case_register.resolve_approval_token',
+            method: 'support_iid.support_iid.doctype.case_register.case_register.resolve_approval_token',
             args: { token: tok },
             callback: function (r) {
                 if (!r.message) return;
@@ -201,7 +201,7 @@ frappe.ready(function () {
         $sendBtn.on('click', function () {
             $sendBtn.prop('disabled', true).text('Sending...');
             frappe.call({
-                method: 'support_iid.case_management.doctype.case_register.case_register.send_approval_otp',
+                method: 'support_iid.support_iid.doctype.case_register.case_register.send_approval_otp',
                 args: { token: token },
                 callback: function (r) {
                     if (r.message && r.message.sent) {
@@ -233,7 +233,7 @@ frappe.ready(function () {
             }
             $verifyBtn.prop('disabled', true).text('Verifying...');
             frappe.call({
-                method: 'support_iid.case_management.doctype.case_register.case_register.verify_approval_otp',
+                method: 'support_iid.support_iid.doctype.case_register.case_register.verify_approval_otp',
                 args: { token: token, otp: otp },
                 callback: function (r) {
                     if (r.message && r.message.verify_ticket) {
@@ -306,7 +306,7 @@ frappe.ready(function () {
         }
 
         frappe.call({
-            method: 'support_iid.case_management.doctype.case_register.case_register.process_case_approval',
+            method: 'support_iid.support_iid.doctype.case_register.case_register.process_case_approval',
             args: {
                 token:         token,
                 verify_ticket: verify_ticket,
