@@ -168,7 +168,7 @@ class SupportIIDDashboard {
 		this.page = page;
 		this.wrapper = $(page.body);
 		this.rows = [];
-		this.trend_granularity = 'month';
+		this.trend_granularity = 'year';
 		this.india_locations = null; // { states: [{state, districts}] } once loaded
 
 		this.inject_styles();
@@ -488,9 +488,9 @@ class SupportIIDDashboard {
 					<div class="sd-trend-section-head">
 						<span class="sd-section-heading" style="margin:0">Analysis</span>
 						<div class="sd-trend-toggle" id="sd-trend-toggle">
-							<button data-g="month" class="on" data-tooltip="Group by month">Monthly</button>
+							<button data-g="month" data-tooltip="Group by month">Monthly</button>
 							<button data-g="quarter" data-tooltip="Group by quarter">Quarterly</button>
-							<button data-g="year" data-tooltip="Group by year">Yearly</button>
+							<button data-g="year" class="on" data-tooltip="Group by year">Yearly</button>
 						</div>
 					</div>
 					<div class="sd-trend-grid">
