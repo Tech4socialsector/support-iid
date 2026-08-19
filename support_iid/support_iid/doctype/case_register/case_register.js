@@ -326,6 +326,7 @@ frappe.ui.form.on("Case Register", {
 
 		frm.disable_save();
 		frm.page.set_primary_action(__("Submit"), () => submit_draft_case(frm));
+		apply_draft_resave_toggle(frm);
 	},
 
 	// Re-runs every inline check above right before save (not just
@@ -398,6 +399,33 @@ function apply_save_as_draft_label(frm) {
 	frm.$wrapper.on("dirty", function () {
 		if (frm.is_new()) {
 			frm.page.set_primary_action(__("Save as Draft"), () => frm.save());
+		}
+	});
+}
+
+// Once a Draft case has already been saved once, refresh() replaces Save
+// with a single "Submit" primary action (see above) so an untouched
+// Draft can only move forward via the full submit-to-approval flow. But
+// if the user then edits a field, they need a way to just persist that
+// edit without re-triggering that flow (and its approver/requestor
+// emails) on every keystroke's worth of change. Swap the primary action
+// back to a plain Save the moment the form goes dirty; refresh() runs
+// again after save() reloads the doc and restores "Submit" once the
+// form is clean.
+//
+// The "Not Saved" title indicator is set the same way, explicitly,
+// rather than relying on Frappe's own toolbar.show_title_as_dirty() —
+// that core method no-ops whenever frm.save_disabled is true (see
+// toolbar.js), which disable_save() above sets permanently for this
+// doctype's Draft state, so the built-in indicator would otherwise
+// never flip away from "Draft" no matter how dirty the form got.
+function apply_draft_resave_toggle(frm) {
+	if (frm.$wrapper.data("case-register-draft-resave-guard")) return;
+	frm.$wrapper.data("case-register-draft-resave-guard", true);
+	frm.$wrapper.on("dirty", function () {
+		if (!frm.is_new() && frm.doc.case_status === "Draft") {
+			frm.page.set_primary_action(__("Save"), () => frm.save());
+			frm.page.set_indicator(__("Not Saved"), "orange");
 		}
 	});
 }

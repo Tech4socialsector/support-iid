@@ -717,6 +717,12 @@ class SupportIIDDashboard {
 		var status_list = (this.case_statuses && this.case_statuses.length) ? this.case_statuses : [];
 		var other_rows = rows.filter((c) => status_list.indexOf(c.case_status) === -1);
 
+		// "Closed" doesn't get its own card here — it's folded into
+		// "Approved" instead, same grouping the Total Approved Amount
+		// financial card above already uses (a Closed case is just an
+		// Approved case that's since been disbursed/closed out).
+		var displayed_statuses = status_list.filter((s) => s !== 'Closed');
+
 		var status_cards = [
 			{
 				icon: icon('list', 18), label: 'Total Cases', value: rows.length,
@@ -728,12 +734,15 @@ class SupportIIDDashboard {
 				sub: 'awaiting review, approval, or action',
 				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status))
 			}
-		].concat(status_list.map((s) => {
-			var status_rows = rows.filter((c) => c.case_status === s);
+		].concat(displayed_statuses.map((s) => {
+			var matches_status = s === 'Approved'
+				? (c) => c.case_status === 'Approved' || c.case_status === 'Closed'
+				: (c) => c.case_status === s;
+			var status_rows = rows.filter(matches_status);
 			return {
 				icon: icon('tag', 18), label: status_display_label(s), value: status_rows.length,
 				sub: status_rows.length + ' case(s)',
-				click: () => self.open_drilldown(status_display_label(s) + ' cases', (c) => c.case_status === s)
+				click: () => self.open_drilldown(status_display_label(s) + ' cases', matches_status)
 			};
 		})).concat(other_rows.length ? [{
 			icon: icon('tag', 18), label: 'Others', value: other_rows.length,
