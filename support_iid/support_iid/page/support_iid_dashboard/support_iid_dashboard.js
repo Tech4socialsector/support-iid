@@ -68,6 +68,10 @@ const STATUS_HEX = {
 	green: '#2f9e5b', red: '#e0524c', purple: '#8a63d2'
 };
 
+// One color per year line in the Yearly comparison chart (render_year_over_year_chart) —
+// cycles if there are ever more years of data than colors.
+const YEAR_LINE_COLORS = ['#2f9e5b', '#2490ef', '#e0524c', '#a259d9', '#e6a119', '#17a2b8', '#6c757d'];
+
 const ACTION_LABEL = { 'Approve': 'Approve', 'Decline': 'Decline', 'Send Back': 'Send Back' };
 const ACTION_PAST = { 'Approve': 'approved', 'Decline': 'declined', 'Send Back': 'sent back' };
 
@@ -497,7 +501,7 @@ class SupportIIDDashboard {
 						<div class="sd-chart-panel">
 							<div class="sd-chart-title">Case Numbers &amp; Approved Funds</div>
 							<div id="sd-trend-chart" style="overflow:hidden"></div>
-							<div class="sd-trend-legend">
+							<div class="sd-trend-legend" id="sd-trend-legend-1">
 								<span><i style="background:#2490ef"></i> Case count</span>
 								<span><i style="background:#2f9e5b"></i> Approved funds</span>
 							</div>
@@ -777,9 +781,24 @@ class SupportIIDDashboard {
 	// ---------------- Trend Analysis (Monthly / Quarterly / Yearly) ----------------
 
 	render_trend_chart() {
+		// "Yearly" isn't just one point per calendar year (that's barely a
+		// trend with only a few years of data) — it's a year-over-year
+		// comparison, same idea as a cricket run-chart comparing two
+		// innings over-by-over: month-of-year on the x-axis, one line per
+		// year, so Jan this year lines up directly under Jan last year.
+		if ((this.trend_granularity || 'month') === 'year') {
+			this.render_year_over_year_chart();
+			return;
+		}
+
 		var self = this;
 		var g = this.trend_granularity || 'month';
 		var groups = {};
+
+		this.wrapper.find('#sd-trend-legend-1').html(
+			'<span><i style="background:#2490ef"></i> Case count</span>' +
+			'<span><i style="background:#2f9e5b"></i> Approved funds</span>'
+		);
 
 		this.rows.forEach((c) => {
 			var key = period_key(c.request_date, g);
@@ -841,6 +860,84 @@ class SupportIIDDashboard {
 			var period = $(this).data('period');
 			if (period) self.open_drilldown('Period · ' + period_label(period, g), (c) => period_key(c.request_date, g) === period);
 		});
+	}
+
+	// Approved funds only (not case count — one metric is already plenty
+	// once it's split across several year-lines) grouped by month-of-year,
+	// one line per calendar year present in the data. Lets you read straight
+	// across, e.g. "this March" vs "last March", instead of the plain
+	// Yearly totals just scrolling further right as new years show up.
+	render_year_over_year_chart() {
+		var self = this;
+		var month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+		var years = {};
+
+		this.rows.forEach((c) => {
+			if (c.case_status !== 'Approved' || !c.request_date) return;
+			var year = c.request_date.slice(0, 4);
+			var month = parseInt(c.request_date.slice(5, 7), 10);
+			if (!month) return;
+			if (!years[year]) years[year] = Array(12).fill(0);
+			years[year][month - 1] += case_amount(c);
+		});
+
+		var year_keys = Object.keys(years).sort();
+		if (!year_keys.length) {
+			this.wrapper.find('#sd-trend-chart').html('<div class="sd-empty-note">No case data yet.</div>');
+			this.wrapper.find('#sd-trend-legend-1').html('');
+			return;
+		}
+
+		var W = 560, H = 160, padL = 10, padR = 10, padT = 10, padB = 28;
+		var cW = W - padL - padR, cH = H - padT - padB;
+		var maxAmount = Math.max.apply(null, year_keys.flatMap((y) => years[y]).concat([1]));
+
+		function px(i) { return padL + (i / 11) * cW; }
+		function py(v) { return padT + cH - (v / maxAmount) * cH; }
+
+		var gridLines = [0.25, 0.5, 0.75].map((f) => {
+			var y = padT + cH * (1 - f);
+			return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#eef0f2" stroke-width="1"/>`;
+		}).join('');
+
+		var xLabels = month_names.map((m, i) =>
+			`<text x="${px(i)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#8d99a6">${m}</text>`
+		).join('');
+
+		var lines = '', dots = '';
+		year_keys.forEach((year, yi) => {
+			var color = YEAR_LINE_COLORS[yi % YEAR_LINE_COLORS.length];
+			var pts = years[year].map((v, i) => px(i) + ',' + py(v)).join(' ');
+			lines += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
+			dots += years[year].map((v, i) =>
+				`<circle cx="${px(i)}" cy="${py(v)}" r="4" fill="${color}" style="cursor:pointer" data-year="${frappe.utils.escape_html(year)}" data-month="${i + 1}">
+					<title>${month_names[i]} ${frappe.utils.escape_html(year)}: ${format_currency(v)} approved</title>
+				</circle>`
+			).join('');
+		});
+
+		var svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="160" style="display:block;overflow:visible">
+			${gridLines}
+			${lines}
+			${dots}
+			${xLabels}
+		</svg>`;
+
+		this.wrapper.find('#sd-trend-chart').html(svg);
+		this.wrapper.find('#sd-trend-chart svg circle').on('click', function () {
+			var year = $(this).data('year');
+			var month = $(this).data('month');
+			self.open_drilldown(month_names[month - 1] + ' ' + year + ' · Approved cases', (c) =>
+				c.case_status === 'Approved' &&
+				c.request_date && c.request_date.slice(0, 4) === String(year) &&
+				parseInt(c.request_date.slice(5, 7), 10) === month
+			);
+		});
+
+		var legend = year_keys.map((year, yi) =>
+			`<span><i style="background:${YEAR_LINE_COLORS[yi % YEAR_LINE_COLORS.length]}"></i> ${frappe.utils.escape_html(year)}</span>`
+		).join('');
+		this.wrapper.find('#sd-trend-legend-1').html(legend);
 	}
 
 	render_trend_chart_2() {
