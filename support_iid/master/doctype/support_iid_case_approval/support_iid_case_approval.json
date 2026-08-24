@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "SCA-.##########",
  "creation": "2026-07-22 15:03:53.124768",
@@ -70,7 +71,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-06 15:23:27.035537",
+ "modified": "2026-08-24 17:51:54.041367",
  "modified_by": "Administrator",
  "module": "Master",
  "name": "Support IID Case Approval",

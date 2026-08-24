@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
+ "allow_import": 1,
  "autoname": "APHS-.#######",
  "creation": "2026-07-20 17:32:37.258126",
  "doctype": "DocType",
@@ -83,7 +84,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-13 00:00:00.000000",
+ "modified": "2026-08-24 12:13:00.712804",
  "modified_by": "Administrator",
  "module": "Master",
  "name": "Approval Hierarchy",
@@ -116,5 +117,7 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "title_field": "requestor_name"
+ "title_field": "requestor_name",
+ "track_changes": 1,
+ "track_seen": 1
 }

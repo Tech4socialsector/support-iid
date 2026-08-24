@@ -540,7 +540,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-19 18:04:22.426862",
+ "modified": "2026-08-24 17:54:50.898186",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Register",
@@ -632,5 +632,6 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 1
+ "track_changes": 1,
+ "track_seen": 1
 }
