@@ -45,7 +45,8 @@
    "fieldname": "approver_email",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Approver Email"
+   "label": "Approver Email",
+   "options": "Email"
   },
   {
    "columns": 3,

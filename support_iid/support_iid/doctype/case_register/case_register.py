@@ -1436,6 +1436,22 @@ class CaseRegister(Document):
 					title="Invalid Email",
 				)
 
+		# A name typed into approver_email instead of an actual address is a
+		# real, repeated occurrence in this app's data (see
+		# _filter_valid_recipients) — that function only stops it from
+		# crashing frappe.sendmail() once a case is already submitted;
+		# catching it here means a case with a malformed approver_email on
+		# any stage can't be saved/submitted in the first place, so the
+		# approval-request email actually has somewhere to go.
+		for idx, stage in enumerate(self.get("case_approval_stage") or []):
+			value = (stage.get("approver_email") or "").strip()
+			if value and not _EMAIL_SHAPE_RE.match(value):
+				frappe.throw(
+					f"Row #{idx + 1}: Please enter a valid email address for Approver Email "
+					f"(got {frappe.bold(value)}).",
+					title="Invalid Approver Email",
+				)
+
 		requestor_email = (self.get("requestor_email") or "").strip()
 		if not requestor_email:
 			return
