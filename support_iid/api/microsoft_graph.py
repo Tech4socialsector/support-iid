@@ -706,7 +706,7 @@ def get_directory_reportees(user_id):
 	token = get_access_token()
 	headers = {"Authorization": f"Bearer {token}"}
 
-	fields = ",".join(["displayName", "mail", "userPrincipalName", "jobTitle", "department"])
+	fields = ",".join(["id", "displayName", "mail", "userPrincipalName", "jobTitle", "department"])
 	resp = _graph_get(f"{GRAPH_URL}/users/{user_id}/directReports", headers, {"$select": fields})
 	if resp is None:
 		return {"items": [], "error": "Could not reach the directory service. Please try again."}
@@ -716,6 +716,7 @@ def get_directory_reportees(user_id):
 
 	items = [
 		{
+			"id": r.get("id"),
 			"name": r.get("displayName"),
 			"email": r.get("mail") or r.get("userPrincipalName"),
 			"designation": r.get("jobTitle"),

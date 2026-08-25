@@ -60,10 +60,20 @@ class CompanyDirectory {
 			.cd-reportee-toggle .cd-caret { transition:transform .12s; font-size:10px; }
 			.cd-reportee-toggle.open .cd-caret { transform:rotate(90deg); }
 			.cd-reportee-panel td { padding:0 20px 16px 20px; background:var(--row-hover,#f8f9fa); }
-			.cd-reportee-list { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:8px; margin-top:10px; }
-			.cd-reportee-card { background:var(--card-bg,#fff); border:1px solid var(--border-color,#e3e8ec); border-radius:8px; padding:9px 11px; }
-			.cd-reportee-card .cd-name { font-size:12.5px; }
-			.cd-reportee-card .cd-sub { font-size:11.5px; }
+			.cd-tree { margin-top:10px; }
+			.cd-tree-node { margin-bottom:6px; }
+			.cd-tree-row { display:flex; align-items:center; gap:10px; background:var(--card-bg,#fff); border:1px solid var(--border-color,#e3e8ec); border-radius:8px; padding:9px 11px; }
+			.cd-tree-toggle { flex-shrink:0; width:20px; height:20px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--text-muted,#8d99a6); border-radius:5px; }
+			.cd-tree-toggle:hover { background:var(--control-bg,#f0f2f5); }
+			.cd-tree-toggle .cd-caret { transition:transform .12s; font-size:10px; }
+			.cd-tree-toggle.open .cd-caret { transform:rotate(90deg); }
+			.cd-tree-toggle.leaf { visibility:hidden; cursor:default; }
+			.cd-tree-info { flex:1; min-width:0; }
+			.cd-tree-info .cd-name { font-size:12.5px; }
+			.cd-tree-info .cd-sub { font-size:11.5px; }
+			.cd-tree-count { flex-shrink:0; font-size:11px; font-weight:600; color:var(--text-muted,#8d99a6); background:var(--control-bg,#f0f2f5); padding:2px 8px; border-radius:20px; }
+			.cd-tree-children { margin-left:26px; margin-top:6px; padding-left:14px; border-left:2px solid var(--border-color,#e3e8ec); }
+			.cd-tree-loading, .cd-tree-empty { font-size:12px; color:var(--text-muted,#8d99a6); padding:6px 2px; }
 			.cd-empty-state { padding:56px 20px; text-align:center; color:var(--text-muted,#8d99a6); font-size:13.5px; }
 			.cd-loading-row td { text-align:center; padding:36px; color:var(--text-muted,#8d99a6); }
 
@@ -215,39 +225,59 @@ class CompanyDirectory {
 				</tr>
 			`;
 			var reportee_row = (row.reportee_count && is_open)
-				? `<tr class="cd-reportee-panel"><td colspan="5">${self.render_reportee_panel(row.id)}</td></tr>`
+				? `<tr class="cd-reportee-panel"><td colspan="5">${self.render_tree_children(row.id)}</td></tr>`
 				: '';
 			return main_row + reportee_row;
 		}).join('');
 
 		this.tbody_el.html(html);
-
-		this.tbody_el.find('.cd-reportee-toggle').on('click', function () {
-			var user_id = $(this).data('user-id');
-			self.toggle_reportees(user_id);
-		});
 	}
 
-	render_reportee_panel(user_id) {
+	// Renders one level of the reportee tree under `user_id` — each child
+	// gets its own toggle, so this is called recursively (once per
+	// expanded node, at whatever depth) rather than being a fixed
+	// one-level lookup. Every level reuses the same get_directory_reportees
+	// call and the same expanded/reportee_cache maps keyed by user id —
+	// depth doesn't need its own bookkeeping since a Graph user id is
+	// already globally unique regardless of where it sits in the tree.
+	render_tree_children(user_id) {
 		var cached = this.reportee_cache[user_id];
 		if (!cached) {
-			return '<div class="cd-sub">Loading reportees…</div>';
+			return '<div class="cd-tree-loading">Loading reportees…</div>';
 		}
 		if (cached.error) {
-			return '<div class="cd-sub">' + frappe.utils.escape_html(cached.error) + '</div>';
+			return '<div class="cd-tree-loading">' + frappe.utils.escape_html(cached.error) + '</div>';
 		}
 		if (!cached.items.length) {
-			return '<div class="cd-sub">No reportees found.</div>';
+			return '<div class="cd-tree-empty">No reportees found.</div>';
 		}
-		return '<div class="cd-reportee-list">' + cached.items.map(function (r) {
-			return `
-				<div class="cd-reportee-card">
-					<div class="cd-name">${frappe.utils.escape_html(r.name || '-')}</div>
-					<div class="cd-sub cd-email">${frappe.utils.escape_html(r.email || '-')}</div>
-					<div class="cd-sub">${frappe.utils.escape_html(r.designation || '')}</div>
-				</div>
-			`;
+
+		var self = this;
+		return '<div class="cd-tree">' + cached.items.map(function (r) {
+			return self.render_tree_node(r);
 		}).join('') + '</div>';
+	}
+
+	render_tree_node(person) {
+		var has_reports = person.reportee_count !== 0; // undefined (unknown yet) or >0 both show a toggle
+		var is_open = !!this.expanded[person.id];
+		var child_html = is_open ? this.render_tree_children(person.id) : '';
+
+		return `
+			<div class="cd-tree-node">
+				<div class="cd-tree-row">
+					<span class="cd-tree-toggle ${has_reports ? '' : 'leaf'} ${is_open ? 'open' : ''}" data-user-id="${frappe.utils.escape_html(person.id || '')}">
+						<span class="cd-caret">&#9656;</span>
+					</span>
+					<div class="cd-tree-info">
+						<div class="cd-name">${frappe.utils.escape_html(person.name || '-')}</div>
+						<div class="cd-sub cd-email">${frappe.utils.escape_html(person.email || '-')}</div>
+						${person.designation ? `<div class="cd-sub">${frappe.utils.escape_html(person.designation)}</div>` : ''}
+					</div>
+				</div>
+				${is_open ? `<div class="cd-tree-children">${child_html}</div>` : ''}
+			</div>
+		`;
 	}
 
 	toggle_reportees(user_id) {
@@ -256,27 +286,32 @@ class CompanyDirectory {
 
 		if (this.expanded[user_id] && !this.reportee_cache[user_id]) {
 			this.render_rows();
-			frappe.call({
-				method: 'support_iid.api.microsoft_graph.get_directory_reportees',
-				args: { user_id: user_id },
-				freeze: false,
-				callback: function (r) {
-					var result = (r && r.message) || {};
-					self.reportee_cache[user_id] = { items: result.items || [], error: result.error || null };
-					self.render_rows();
-				},
-				error: function () {
-					self.reportee_cache[user_id] = {
-						items: [],
-						error: 'Could not load reportees. Please try again.',
-					};
-					self.render_rows();
-				}
-			});
+			this.fetch_reportees(user_id);
 			return;
 		}
 
 		this.render_rows();
+	}
+
+	fetch_reportees(user_id) {
+		var self = this;
+		frappe.call({
+			method: 'support_iid.api.microsoft_graph.get_directory_reportees',
+			args: { user_id: user_id },
+			freeze: false,
+			callback: function (r) {
+				var result = (r && r.message) || {};
+				self.reportee_cache[user_id] = { items: result.items || [], error: result.error || null };
+				self.render_rows();
+			},
+			error: function () {
+				self.reportee_cache[user_id] = {
+					items: [],
+					error: 'Could not load reportees. Please try again.',
+				};
+				self.render_rows();
+			}
+		});
 	}
 
 	export_current_company() {
