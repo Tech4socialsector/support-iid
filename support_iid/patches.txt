@@ -20,3 +20,4 @@ support_iid.patches.add_draft_case_status
 support_iid.patches.rename_roles_to_support_iid_naming
 support_iid.patches.cleanup_duplicate_roles_after_rename
 support_iid.patches.remove_orphaned_old_role_assignments
+support_iid.patches.migrate_stale_reviewer_approval_level
