@@ -840,12 +840,11 @@ def _run_export_directory_all_companies(user):
 			percent=(i / total) * 100,
 			title="Exporting Company Directory",
 			description=f"{company} ({i + 1}/{total})",
-			user=user,
 		)
 		rows, _company_error = _fetch_directory_rows_for_company(company, headers)
 		all_rows.extend(rows)
 
-	frappe.publish_progress(percent=100, title="Exporting Company Directory", description="Saving file…", user=user)
+	frappe.publish_progress(percent=100, title="Exporting Company Directory", description="Saving file…")
 
 	xlsx_data = make_xlsx(_rows_to_sheet_data(all_rows), "Company Directory - All Companies")
 
@@ -878,6 +877,100 @@ def _run_export_directory_all_companies(user):
 	).insert(ignore_permissions=True)
 
 	frappe.db.commit()
+
+
+# ------------------------------------------------------------------
+# Full-tenant directory load — Company Directory page's main table
+#
+# Same "loop every company, one Graph call per user for reportee names"
+# cost as export_directory_all_companies above, so it shares the same
+# background-job treatment: the page triggers this once on load, shows
+# progress, and reads the cached result once done — rather than ever
+# trying to serve ~12k users' worth of Graph calls inline within a
+# single Desk request/response cycle.
+# ------------------------------------------------------------------
+
+_DIRECTORY_FULL_LOAD_CACHE_KEY_PREFIX = "support_iid:directory_full_load:"
+
+
+@frappe.whitelist()
+def start_directory_full_load():
+	"""
+	Kicks off the full-tenant directory fetch as a background job and
+	returns immediately. The page listens for the directory_full_load_done
+	realtime event, then calls get_directory_full_load_result to read the
+	cached rows (kept out of the realtime payload itself, since a
+	12k-row payload has no business riding a websocket message).
+	"""
+	_require_system_manager()
+
+	job = frappe.enqueue(
+		"support_iid.api.microsoft_graph._run_directory_full_load",
+		queue="long",
+		timeout=3600,
+		user=frappe.session.user,
+	)
+	return {"job_id": job.id}
+
+
+def _run_directory_full_load(user):
+	"""
+	Background job body for start_directory_full_load — not whitelisted,
+	only frappe.enqueue is meant to call this (same pattern as
+	_run_export_directory_all_companies).
+	"""
+	frappe.set_user(user)
+
+	token = get_access_token()
+	headers = {"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}
+
+	companies_result = get_directory_companies()
+	companies = companies_result["items"]
+	total = len(companies) or 1
+
+	all_rows = []
+	any_error = None
+	for i, company in enumerate(companies):
+		frappe.publish_progress(
+			percent=(i / total) * 100,
+			title="Loading Company Directory",
+			description=f"{company} ({i + 1}/{total})",
+		)
+		rows, company_error = _fetch_directory_rows_for_company(company, headers)
+		all_rows.extend(rows)
+		any_error = any_error or company_error
+
+	frappe.publish_progress(percent=100, title="Loading Company Directory", description="Done")
+
+	# Cached, not persisted — this is a point-in-time directory snapshot
+	# for display, not a record anything else in the app reads; a 30
+	# minute TTL is long enough to survive the user paging around the
+	# Desk and coming back, without the cache silently going stale across
+	# a full workday of Graph-side org changes.
+	cache_key = _DIRECTORY_FULL_LOAD_CACHE_KEY_PREFIX + user
+	frappe.cache.set_value(
+		cache_key, {"items": all_rows, "error": any_error}, expires_in_sec=30 * 60
+	)
+
+	frappe.publish_realtime(
+		"directory_full_load_done",
+		{"row_count": len(all_rows), "error": any_error},
+		user=user,
+	)
+
+
+@frappe.whitelist()
+def get_directory_full_load_result():
+	"""
+	Reads back the cached result of the most recent start_directory_full_load
+	run for the current user, if any (None if it's never been run, or the
+	30-minute cache TTL has since expired — the page treats either the
+	same as "not loaded yet", and re-triggers start_directory_full_load).
+	"""
+	_require_system_manager()
+
+	cache_key = _DIRECTORY_FULL_LOAD_CACHE_KEY_PREFIX + frappe.session.user
+	return frappe.cache.get_value(cache_key)
 
 
 @frappe.whitelist(methods=["POST"])
