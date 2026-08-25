@@ -11,6 +11,32 @@ $(
 		"</style>"
 ).appendTo("head");
 
+// ── Mobile-friendly child tables ─────────────────────────────────────────
+// This form's four grids (Case Approval Stage, Case Approval Log,
+// Supporting Documents, Family Members) are standard Frappe grids —
+// Frappe core has no mobile-specific grid layout, so on a phone they're
+// just a cramped horizontal-scroll table with tiny touch targets. This is
+// a CSS-only polish pass (bigger touch targets, clearer scroll affordance,
+// larger type at narrow widths) — it keeps the grid as a grid rather than
+// rebuilding it as a card list, and only takes effect under the same
+// ~640px breakpoint used elsewhere in this app's own custom pages.
+if (!document.getElementById("case-register-mobile-grid-style")) {
+	var mobile_grid_style = document.createElement("style");
+	mobile_grid_style.id = "case-register-mobile-grid-style";
+	mobile_grid_style.textContent =
+		"@media (max-width:640px) {" +
+		"  .form-grid-container { margin-left:-15px; margin-right:-15px; }" +
+		"  .form-grid-container .form-grid { overflow-x:auto; -webkit-overflow-scrolling:touch; }" +
+		"  .form-grid-container .grid-heading-row, .form-grid-container .grid-row { min-width:max-content; }" +
+		"  .form-grid-container .grid-static-col { min-width:110px; font-size:13px; padding-top:10px; padding-bottom:10px; }" +
+		"  .form-grid-container .row-check, .form-grid-container .row-index { min-width:36px; }" +
+		"  .form-grid-container .grid-row-check { width:18px; height:18px; }" +
+		"  .form-grid-container .grid-footer-toolbar .btn { padding:8px 14px; font-size:13px; }" +
+		"  .form-grid-container .grid-add-row { padding:10px 14px; font-size:13px; }" +
+		"}";
+	document.head.appendChild(mobile_grid_style);
+}
+
 // ── Branded loader ────────────────────────────────────────────────────────
 // Same look as the guest web form's own showLoader/hideLoader (a spinning
 // ring around the APF logo) instead of Frappe's plain freeze overlay —

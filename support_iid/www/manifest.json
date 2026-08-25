@@ -2,7 +2,7 @@
 	"name": "Support IID",
 	"short_name": "Support IID",
 	"description": "Support IID case management for the Azim Premji Foundation.",
-	"start_url": "/app/case-management",
+	"start_url": "/app/support-iid-dashboard",
 	"scope": "/app",
 	"display": "standalone",
 	"orientation": "portrait-primary",
