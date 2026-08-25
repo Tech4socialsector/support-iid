@@ -29,8 +29,20 @@ def execute():
 		if not frappe.db.exists("Role", old_name):
 			continue
 
-		affected_users = frappe.get_all("Has Role", filters={"role": old_name}, pluck="parent")
+		# Has Role isn't exclusively a User child table — Page, Report,
+		# Role Profile, Workspace, Custom Role, Desktop Icon, Dashboard
+		# Chart, and Custom HTML Block all use the same child doctype for
+		# their own "roles" field (e.g. this app's own Page/Workspace JSON
+		# restricting access to a set of roles). Without this filter,
+		# frappe.get_doc("User", user) below throws DoesNotExistError the
+		# moment it hits a non-User parent — exactly what broke a live
+		# migrate on the UAT site.
+		affected_users = frappe.get_all(
+			"Has Role", filters={"role": old_name, "parenttype": "User"}, pluck="parent"
+		)
 		for user in affected_users:
+			if not frappe.db.exists("User", user):
+				continue
 			user_doc = frappe.get_doc("User", user)
 			existing_roles = [r.role for r in user_doc.get("roles") or []]
 			if new_name not in existing_roles:
