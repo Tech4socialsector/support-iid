@@ -47,7 +47,7 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-24 00:00:00.000000",
+ "modified": "2026-08-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Management",
@@ -57,7 +57,17 @@
  "public": 1,
  "quick_lists": [],
  "restrict_to_domain": "",
- "roles": [],
+ "roles": [
+  {
+   "role": "System Manager"
+  },
+  {
+   "role": "Support IID Reviewer"
+  },
+  {
+   "role": "Support IID Approver"
+  }
+ ],
  "sequence_id": 21.0,
  "shortcuts": [
   {
