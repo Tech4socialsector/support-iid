@@ -19,6 +19,28 @@ ALLOWED_EMAIL_DOMAIN = "azimpremjifoundation.org"
 _ACCESS_TOKEN_CACHE_KEY = "support_iid:microsoft_graph_access_token"
 
 
+def _graph_get(url, headers, params=None):
+	"""
+	requests.get wrapper shared by the Company Directory endpoints —
+	a bare connection reset/timeout talking to Graph (seen in practice:
+	ConnectionResetError mid-response) previously propagated as an
+	unhandled 500 all the way to the Desk page, since none of those
+	endpoints caught requests.exceptions.RequestException the way
+	get_access_token/_send_plain_email's callers already do elsewhere in
+	this file. One retry, since a reset connection reliably succeeds on
+	the very next attempt in practice; a second failure is logged and
+	returned as None so the caller can degrade (partial results, empty
+	list) instead of the whole request blowing up.
+	"""
+	for attempt in range(2):
+		try:
+			return requests.get(url, headers=headers, params=params, timeout=15)
+		except requests.exceptions.RequestException as e:
+			if attempt == 1:
+				frappe.log_error(str(e), "Graph API request failed")
+				return None
+
+
 def get_access_token():
 	"""
 	Get a Microsoft Graph access token, cached in Redis for most of its
@@ -493,6 +515,368 @@ def get_employee_details(email, funds_requested=None):
 # ------------------------------------------------------------------
 # Standalone skip-level lookup (backward compatibility)
 # ------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------
+# Company directory — System Manager only. Lists every user in a given
+# company (companyName in Azure AD) with their email and direct-report
+# count, for the internal "Company Directory" Desk page. Separate from
+# get_employee_details above (allow_guest, single-user, case-form
+# prefill) — this is an internal, admin-only, org-wide listing, so it's
+# whitelisted without allow_guest and checked against System Manager
+# explicitly rather than relying on the page's own role restriction
+# alone (same defense-in-depth pattern as close_case/reviewer_final_approval
+# checking their own permission rather than trusting the caller).
+# ------------------------------------------------------------------
+
+
+def _require_system_manager():
+	if frappe.session.user != "Administrator" and "System Manager" not in frappe.get_roles(frappe.session.user):
+		frappe.throw("You don't have permission to view the company directory.", frappe.PermissionError)
+
+
+@frappe.whitelist()
+def get_directory_companies():
+	"""
+	Distinct companyName values across the tenant, for the Company
+	Directory page's filter dropdown. Graph has no native DISTINCT — this
+	pages through every user's companyName (id + companyName only, to
+	keep each page small) and dedupes in Python.
+	"""
+	_require_system_manager()
+
+	token = get_access_token()
+	headers = {"Authorization": f"Bearer {token}"}
+
+	companies = set()
+	url = f"{GRAPH_URL}/users"
+	params = {"$select": "companyName", "$top": 999}
+	error = None
+
+	# Graph pages via @odata.nextLink (a full URL with its own query
+	# string) — once present, subsequent requests use that URL as-is and
+	# drop params, matching Graph's own pagination contract.
+	for _ in range(50):
+		resp = _graph_get(url, headers, params)
+		if resp is None:
+			# Both attempts in _graph_get failed (already logged there) —
+			# surface this distinctly from "the tenant just has no
+			# companies", so the page can tell an admin the list may be
+			# incomplete rather than silently showing an empty dropdown.
+			error = "Could not reach the directory service. The list below may be incomplete."
+			break
+		if resp.status_code != 200:
+			frappe.log_error(resp.text, "Graph directory companies fetch failed")
+			error = "The directory service returned an error. The list below may be incomplete."
+			break
+		data = resp.json()
+		for u in data.get("value") or []:
+			name = (u.get("companyName") or "").strip()
+			if name:
+				companies.add(name)
+		next_link = data.get("@odata.nextLink")
+		if not next_link:
+			break
+		url, params = next_link, None
+
+	return {"items": sorted(companies), "error": error}
+
+
+def _fetch_directory_rows_for_company(company, headers):
+	"""
+	Shared by get_directory_users (Desk table — reportee_count/reportee_names
+	both come along for free) and the Excel export endpoints below (which
+	need reportee_names specifically) — one Graph call per user in the
+	company either way (directReports), so there's no reason for the
+	export path to re-fetch what this already gets.
+
+	Returns (rows, error) — error is a user-facing message string, or None.
+	"""
+	company_escaped = company.replace("'", "''")
+
+	fields = ",".join(["id", "displayName", "mail", "userPrincipalName", "jobTitle", "department", "companyName"])
+	users = []
+	url = f"{GRAPH_URL}/users"
+	params = {
+		"$select": fields,
+		"$filter": f"companyName eq '{company_escaped}'",
+		"$count": "true",
+		"$top": 999,
+	}
+	error = None
+
+	for _ in range(50):
+		resp = _graph_get(url, headers, params)
+		if resp is None:
+			error = "Could not reach the directory service. This list may be incomplete."
+			break
+		if resp.status_code != 200:
+			frappe.log_error(resp.text, "Graph directory users fetch failed")
+			error = "The directory service returned an error. This list may be incomplete."
+			break
+		data = resp.json()
+		users.extend(data.get("value") or [])
+		next_link = data.get("@odata.nextLink")
+		if not next_link:
+			break
+		url, params = next_link, None
+
+	rows = []
+	for u in users:
+		# Every account Graph returns for the company is listed as-is,
+		# shared mailboxes/meeting-room resources included — this tenant
+		# has no field reliably distinguishing those from real employees
+		# (userType/employeeId/jobTitle look identical for both), so
+		# filtering any of them out risks silently hiding a real person.
+		# Only a row with no email at all (neither mail nor
+		# userPrincipalName) is skipped, since there'd be nothing to show
+		# in the Email column anyway.
+		email = u.get("mail") or u.get("userPrincipalName")
+		if not email:
+			continue
+
+		user_id = u.get("id")
+		reportee_names = []
+		if user_id:
+			reports_resp = _graph_get(
+				f"{GRAPH_URL}/users/{user_id}/directReports",
+				headers,
+				{"$select": "displayName"},
+			)
+			if reports_resp is not None and reports_resp.status_code == 200:
+				reportee_names = [
+					r.get("displayName") for r in (reports_resp.json().get("value") or []) if r.get("displayName")
+				]
+
+		rows.append(
+			{
+				"id": user_id,
+				"name": u.get("displayName"),
+				"email": email,
+				"designation": u.get("jobTitle"),
+				"department": u.get("department"),
+				"company": u.get("companyName"),
+				"reportee_count": len(reportee_names),
+				"reportee_names": reportee_names,
+			}
+		)
+
+	return rows, error
+
+
+@frappe.whitelist()
+def get_directory_users(company=None):
+	"""
+	Users in `company` (companyName, exact match) with their email and
+	direct-report count — the Company Directory page's main table.
+	See _fetch_directory_rows_for_company for the per-user Graph call
+	this needs (directReports, once per user in the company).
+	"""
+	_require_system_manager()
+
+	if not (company or "").strip():
+		return {"items": [], "error": None}
+
+	token = get_access_token()
+	# companyName filtering needs Graph's "advanced query" support — plain
+	# $filter on this property 400s with Request_UnsupportedQuery without
+	# both the ConsistencyLevel header and $count=true (confirmed against
+	# this tenant; see get_directory_companies, which works unfiltered
+	# without either).
+	headers = {"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}
+
+	rows, error = _fetch_directory_rows_for_company(company, headers)
+	return {"items": rows, "error": error}
+
+
+@frappe.whitelist()
+def get_directory_reportees(user_id):
+	"""
+	Direct reports for one user (by Graph object id) — fetched on demand
+	when a row in the Company Directory table is expanded, rather than
+	upfront for every row in get_directory_users (which would multiply
+	the already-one-call-per-user Graph load there by however many
+	reports each person has).
+	"""
+	_require_system_manager()
+
+	if not (user_id or "").strip():
+		return {"items": [], "error": None}
+
+	token = get_access_token()
+	headers = {"Authorization": f"Bearer {token}"}
+
+	fields = ",".join(["displayName", "mail", "userPrincipalName", "jobTitle", "department"])
+	resp = _graph_get(f"{GRAPH_URL}/users/{user_id}/directReports", headers, {"$select": fields})
+	if resp is None:
+		return {"items": [], "error": "Could not reach the directory service. Please try again."}
+	if resp.status_code != 200:
+		frappe.log_error(resp.text, "Graph directory reportees fetch failed")
+		return {"items": [], "error": "The directory service returned an error. Please try again."}
+
+	items = [
+		{
+			"name": r.get("displayName"),
+			"email": r.get("mail") or r.get("userPrincipalName"),
+			"designation": r.get("jobTitle"),
+			"department": r.get("department"),
+		}
+		for r in resp.json().get("value") or []
+	]
+	return {"items": items, "error": None}
+
+
+# ------------------------------------------------------------------
+# Excel export — Company Directory page
+#
+# Two separate entry points, since they have very different cost:
+#
+# - export_directory_company (sync, whitelisted): the currently-selected
+#   company only, reusing the exact same rows/Graph calls the Desk table
+#   already made. Bounded by that one company's headcount — fast enough
+#   to return directly as a file download in the same request.
+#
+# - export_directory_all_companies (enqueued, whitelisted only to kick
+#   off the job): every company in the tenant. At 12k+ users tenant-wide
+#   and one Graph call per person for reportee names, this is a genuinely
+#   slow job (potentially thousands of calls) — run on the "long" queue,
+#   reporting progress via frappe.publish_progress, and finishing with
+#   both a realtime push (page still open) and a persistent Notification
+#   Log entry (bell icon) carrying the download link, since a job this
+#   long very plausibly outlives the user staying on the page.
+# ------------------------------------------------------------------
+
+_EXPORT_SHEET_HEADER = ["Company", "Employee Name", "Email", "Department", "Designation", "Reportee Names"]
+
+
+def _rows_to_sheet_data(rows):
+	data = [_EXPORT_SHEET_HEADER]
+	for row in rows:
+		data.append(
+			[
+				row.get("company") or "",
+				row.get("name") or "",
+				row.get("email") or "",
+				row.get("department") or "",
+				row.get("designation") or "",
+				", ".join(row.get("reportee_names") or []),
+			]
+		)
+	return data
+
+
+@frappe.whitelist()
+def export_directory_company(company=None):
+	"""
+	Synchronous export for the currently-selected company only — reuses
+	_fetch_directory_rows_for_company (same call the Desk table itself
+	just made), so this is bounded by that one company's headcount and
+	fast enough to serve directly as a file download.
+	"""
+	_require_system_manager()
+
+	from frappe.utils.xlsxutils import build_xlsx_response
+
+	company = (company or "").strip()
+	if not company:
+		frappe.throw("Select a company first.")
+
+	token = get_access_token()
+	headers = {"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}
+	rows, error = _fetch_directory_rows_for_company(company, headers)
+
+	if error and not rows:
+		frappe.throw(error)
+
+	build_xlsx_response(_rows_to_sheet_data(rows), f"Company Directory - {company}")
+
+
+@frappe.whitelist()
+def export_directory_all_companies():
+	"""
+	Kicks off the full-tenant export as a background job (see
+	_run_export_directory_all_companies) and returns immediately — the
+	Desk page shows a "started" toast, then listens for the
+	directory_export_all_done realtime event this job publishes on
+	completion. Returns the RQ job id so the frontend could poll job
+	status directly if it ever needs to (not currently used — realtime
+	push is the primary notification path, per get_directory_reportees's
+	sibling endpoints all following the same push-not-poll pattern used
+	throughout Frappe core for long jobs).
+	"""
+	_require_system_manager()
+
+	job = frappe.enqueue(
+		"support_iid.api.microsoft_graph._run_export_directory_all_companies",
+		queue="long",
+		timeout=3600,
+		user=frappe.session.user,
+	)
+	return {"job_id": job.id}
+
+
+def _run_export_directory_all_companies(user):
+	"""
+	The actual background job body for export_directory_all_companies.
+	Not whitelisted — only frappe.enqueue (from the whitelisted trigger
+	above) is meant to call this, same as every other core "Prepared
+	Report"-style background export.
+	"""
+	from frappe.utils.xlsxutils import build_xlsx_response, make_xlsx
+
+	frappe.set_user(user)
+
+	token = get_access_token()
+	headers = {"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}
+
+	companies_result = get_directory_companies()
+	companies = companies_result["items"]
+	total = len(companies) or 1
+
+	all_rows = []
+	for i, company in enumerate(companies):
+		frappe.publish_progress(
+			percent=(i / total) * 100,
+			title="Exporting Company Directory",
+			description=f"{company} ({i + 1}/{total})",
+			user=user,
+		)
+		rows, _company_error = _fetch_directory_rows_for_company(company, headers)
+		all_rows.extend(rows)
+
+	frappe.publish_progress(percent=100, title="Exporting Company Directory", description="Saving file…", user=user)
+
+	xlsx_data = make_xlsx(_rows_to_sheet_data(all_rows), "Company Directory - All Companies")
+
+	file_doc = frappe.get_doc(
+		{
+			"doctype": "File",
+			"file_name": "Company Directory - All Companies.xlsx",
+			"is_private": 1,
+			"content": xlsx_data.getvalue(),
+		}
+	)
+	file_doc.save(ignore_permissions=True)
+
+	frappe.publish_realtime(
+		"directory_export_all_done",
+		{"file_url": file_doc.file_url, "row_count": len(all_rows)},
+		user=user,
+	)
+
+	frappe.get_doc(
+		{
+			"doctype": "Notification Log",
+			"subject": f"Company Directory export ready — {len(all_rows)} people across {total} companies.",
+			"email_content": f'<a href="{file_doc.file_url}" target="_blank">Download Company Directory.xlsx</a>',
+			"for_user": user,
+			"type": "Alert",
+			"document_type": "File",
+			"document_name": file_doc.name,
+		}
+	).insert(ignore_permissions=True)
+
+	frappe.db.commit()
 
 
 @frappe.whitelist(methods=["POST"])

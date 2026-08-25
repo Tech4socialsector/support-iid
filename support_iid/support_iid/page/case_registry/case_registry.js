@@ -254,10 +254,12 @@ class CaseListView {
 	inject_styles() {
 		if ($('#cl-style').length) return;
 		$(`<style id="cl-style">
-			.cl-page { padding:22px 28px 40px; }
+			.cl-page { padding:20px 28px 40px; }
 
-			/* Hero card — the one place we keep a "card" look */
-			.cl-card { background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:8px; padding:20px 22px; margin-bottom:16px; }
+			/* Hero card — the one place we keep a "card" look. Soft elevation
+			   (shadow + thin border) instead of a flat outline, so it reads as
+			   "raised" rather than a bare bordered box — the app-shell look. */
+			.cl-card { background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:12px; padding:20px 22px; margin-bottom:16px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04); }
 			.cl-hero { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:16px; }
 			.cl-hero-name { font-size:23px; font-weight:700; margin-bottom:14px; letter-spacing:-.01em; }
 			.cl-hero-stats { display:flex; flex-wrap:wrap; gap:0; }
@@ -296,14 +298,14 @@ class CaseListView {
 
 			/* document cards */
 			.cl-doc-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)); gap:12px; }
-			.cl-doc-card { border:1px solid var(--border-color,#e3e8ec); border-radius:8px; padding:16px 14px; cursor:pointer; transition:box-shadow .12s; background:#fff; }
-			.cl-doc-card:hover { box-shadow:0 4px 14px rgba(0,0,0,.08); }
+			.cl-doc-card { border:1px solid var(--border-color,#e3e8ec); border-radius:10px; padding:16px 14px; cursor:pointer; transition:box-shadow .12s, transform .12s; background:var(--card-bg,#fff); box-shadow:0 1px 2px rgba(0,0,0,.04); }
+			.cl-doc-card:hover { box-shadow:0 4px 14px rgba(0,0,0,.08); transform:translateY(-1px); }
 			.cl-doc-card.cl-doc-missing-card { cursor:default; opacity:.6; }
 			.cl-doc-card-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
 			.cl-doc-icon { width:36px; height:36px; border-radius:8px; background:var(--primary,#2490ef); color:#fff; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; text-transform:uppercase; flex-shrink:0; }
 			.cl-doc-card-actions { display:flex; align-items:center; gap:4px; }
 			.cl-doc-download-btn {
-				width:28px; height:28px; border-radius:6px; background:#f4f5f7; color:#6b7280;
+				width:28px; height:28px; border-radius:8px; background:var(--control-bg,#f4f5f7); color:#6b7280;
 				display:inline-flex; align-items:center; justify-content:center;
 				text-decoration:none; border:none; cursor:pointer; transition:background .12s,color .12s;
 			}
@@ -331,6 +333,7 @@ class CaseListView {
 			#cl-table thead th {
 				background:#f2f3f5; font-weight:700; font-size:11.5px; text-transform:uppercase; letter-spacing:.04em;
 				color:#1a1a1a; text-align:left; white-space:nowrap; user-select:none; border-top:none;
+				position:sticky; top:0; z-index:1;
 			}
 			#cl-table thead th.cl-sortable { cursor:pointer; }
 			#cl-table thead th .cl-sort-arrow { color:#9aa1a8; margin-left:5px; font-size:11px; }
@@ -358,14 +361,22 @@ class CaseListView {
 			/* subtle colored accent tying each row to its status, inset so it doesn't disturb the grid borders */
 			#cl-table tbody tr td:first-child { box-shadow:inset 3px 0 0 0 var(--cl-row-accent, transparent); }
 
-			/* toolbar — per-column filter inputs (native Frappe control look) + icon buttons */
-			.cl-toolbar-row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px; }
-			.cl-icon-btn {
-				width:32px; height:32px; border:1px solid var(--border-color,#d1d8dd); border-radius:6px;
-				background:#fff; display:inline-flex; align-items:center; justify-content:center;
-				cursor:pointer; color:var(--text-muted,#8d99a6); font-size:14px; flex-shrink:0;
+			/* toolbar — per-column filter inputs (native Frappe control look) + icon buttons.
+			   Sticky so it stays visible while scrolling a long list, with a
+			   subtle backdrop so table rows don't show through underneath it. */
+			.cl-toolbar-row {
+				display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:14px;
+				position:sticky; top:0; z-index:2; background:var(--card-bg,#fff);
+				padding:10px 0; margin-left:-2px; margin-right:-2px;
 			}
-			.cl-icon-btn:hover { background:#f4f5f7; color:var(--text-color,#1a1a1a); }
+			.cl-toolbar-row .form-control { border-radius:8px; }
+			.cl-icon-btn {
+				width:32px; height:32px; border:1px solid var(--border-color,#d1d8dd); border-radius:8px;
+				background:var(--card-bg,#fff); display:inline-flex; align-items:center; justify-content:center;
+				cursor:pointer; color:var(--text-muted,#8d99a6); font-size:14px; flex-shrink:0;
+				transition:background .12s, color .12s, box-shadow .12s;
+			}
+			.cl-icon-btn:hover { background:var(--control-bg,#f4f5f7); color:var(--text-color,#1a1a1a); box-shadow:0 1px 2px rgba(0,0,0,.05); }
 
 			.cl-list-footer { display:flex; justify-content:space-between; align-items:center; margin-top:12px; flex-wrap:wrap; gap:8px; }
 			.cl-list-footer-right { display:flex; align-items:center; gap:12px; }
@@ -373,11 +384,13 @@ class CaseListView {
 			/* Numbered pagination — same look as the dashboard's drill-down grid */
 			.cl-pagination-controls { display:flex; align-items:center; gap:5px; }
 			.cl-pagination-controls button {
-				border:1px solid var(--border-color,#d1d8dd); background:#fff; min-width:28px; height:28px; padding:0 8px;
-				font-size:12px; border-radius:5px; cursor:pointer; color:#1a1a1a; display:inline-flex; align-items:center; justify-content:center;
+				border:1px solid var(--border-color,#d1d8dd); background:var(--card-bg,#fff); min-width:28px; height:28px; padding:0 8px;
+				font-size:12px; border-radius:7px; cursor:pointer; color:var(--text-color,#1a1a1a); display:inline-flex; align-items:center; justify-content:center;
+				transition:background .12s, box-shadow .12s;
 			}
+			.cl-pagination-controls button:hover:not(:disabled) { background:var(--control-bg,#f4f5f7); }
 			.cl-pagination-controls button:disabled { opacity:.35; cursor:default; }
-			.cl-pagination-controls button.cl-page-num.on { background:#1a1a1a; color:#fff; border-color:#1a1a1a; font-weight:600; }
+			.cl-pagination-controls button.cl-page-num.on { background:var(--primary,#2490ef); color:#fff; border-color:var(--primary,#2490ef); font-weight:600; }
 
 			/* dropdown action button */
 			.cl-action-dropdown { position:relative; display:inline-block; }
@@ -387,15 +400,36 @@ class CaseListView {
 
 			/* modal / lightbox — shared by document preview + action confirmation */
 			.cl-modal-backdrop { position:fixed; inset:0; background:rgba(15,18,22,.55); z-index:1200; display:flex; align-items:center; justify-content:center; padding:14px; }
-			.cl-modal { background:#fff; border-radius:12px; max-width:900px; width:100%; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+			.cl-modal { background:var(--card-bg,#fff); border-radius:14px; max-width:900px; width:100%; max-height:90vh; display:flex; flex-direction:column; overflow:hidden; box-shadow:0 20px 60px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.08); }
 			.cl-modal.cl-modal-lg { max-width:720px; }
 			.cl-modal-header { display:flex; align-items:center; justify-content:space-between; padding:18px 26px; border-bottom:1px solid var(--border-color,#e3e8ec); flex-wrap:wrap; gap:10px; }
 			.cl-modal-title { font-weight:700; font-size:16px; }
-			.cl-modal-close { cursor:pointer; font-size:22px; line-height:1; color:var(--text-muted,#8d99a6); background:none; border:none; }
-			.cl-modal-close:hover { color:#1a1a1a; }
-			.cl-modal-body { padding:26px; overflow:auto; flex:1; background:#f7f8fa; }
-			.cl-modal-body.cl-modal-body-plain { background:#fff; }
+			.cl-modal-close { cursor:pointer; font-size:22px; line-height:1; color:var(--text-muted,#8d99a6); background:none; border:none; border-radius:6px; transition:background .12s, color .12s; }
+			.cl-modal-close:hover { color:var(--text-color,#1a1a1a); background:var(--control-bg,#f4f5f7); }
+			.cl-modal-body { padding:26px; overflow:auto; flex:1; background:var(--subtle-fg,#f7f8fa); }
+			.cl-modal-body.cl-modal-body-plain { background:var(--card-bg,#fff); }
 			.cl-modal-footer { padding:16px 26px; border-top:1px solid var(--border-color,#e3e8ec); display:flex; justify-content:flex-end; gap:10px; flex-wrap:wrap; }
+
+			/* Buttons & inputs — clearer tactile hover/focus states, accent-blue focus ring */
+			.cl-page .btn { border-radius:8px; transition:box-shadow .12s, filter .12s, background .12s; }
+			.cl-page .btn-primary, .cl-page button#cl-action-submit { box-shadow:0 1px 2px rgba(0,0,0,.08); }
+			.cl-page .btn-primary:hover, .cl-page button#cl-action-submit:hover { filter:brightness(0.93); }
+			.cl-page .form-control, .cl-modal .form-control {
+				border-radius:8px; border:1px solid var(--border-color,#d1d8dd); background:var(--control-bg,var(--card-bg,#fff));
+				transition:border-color .12s, box-shadow .12s;
+			}
+			.cl-page .form-control:focus, .cl-modal .form-control:focus {
+				border-color:var(--primary,#2490ef); box-shadow:0 0 0 2px rgba(36,144,239,.18); outline:none;
+			}
+
+			/* Mobile — collapse doc/field grids to a single column, keep tables scrollable */
+			@media (max-width: 640px) {
+				.cl-page { padding:14px 14px 32px; }
+				.cl-hero-stat { padding:0 14px; }
+				.cl-doc-grid, .cl-field-grid { grid-template-columns:1fr; }
+				.cl-grid .cl-section { border-right:none !important; }
+				.cl-toolbar-row { position:static; }
+			}
 		</style>`).appendTo('head');
 	}
 
@@ -766,7 +800,7 @@ class CaseListView {
 			(frappe.user_roles || []).indexOf('Support IID Approver') > -1 ||
 			(current.stage.approver_email || '').toLowerCase() === user.toLowerCase()
 		);
-		var can_close = is_admin || (frappe.user_roles || []).indexOf('Reviewer') > -1;
+		var can_close = is_admin || (frappe.user_roles || []).indexOf('Support IID Reviewer') > -1;
 
 		function row(label, value, wide) {
 			var has = value !== null && value !== undefined && value !== '';
@@ -971,6 +1005,16 @@ class CaseListView {
 						${row('Milaap Recommendation', doc.milaap_recommendation, true)}
 					</div>
 				</div>
+				<div class="cl-section cl-span-full">
+					<div class="cl-section-title">Closure of Case</div>
+					<div class="cl-field-grid">
+						${row('Approved Amount', doc.approved_amount ? format_currency(doc.approved_amount) : '')}
+						${row('Date of Transfer', doc.date_of_transfer ? frappe.datetime.str_to_user(doc.date_of_transfer) : '')}
+						${row('UTR Details', doc.utr_details)}
+						${row('Status of Milaap Transfer', doc.status_of_milaap_transfer)}
+						${row('Refund Amount (if any)', doc.refund_amount_if_any ? format_currency(doc.refund_amount_if_any) : '')}
+					</div>
+				</div>
 				</div>
 			</div>
 
@@ -1052,6 +1096,19 @@ class CaseListView {
 							<input type="text" class="form-control" id="cl-close-utr" value="${frappe.utils.escape_html(doc.utr_details || '')}">
 						</div>
 						<div style="margin-bottom:16px">
+							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">Status of Milaap Transfer</label>
+							<select class="form-control" id="cl-close-milaap-status">
+								<option value="" ${!doc.status_of_milaap_transfer ? 'selected' : ''}></option>
+								<option value="Pending" ${doc.status_of_milaap_transfer === 'Pending' ? 'selected' : ''}>Pending</option>
+								<option value="Partially Disbursed" ${doc.status_of_milaap_transfer === 'Partially Disbursed' ? 'selected' : ''}>Partially Disbursed</option>
+								<option value="Fully Disbursed" ${doc.status_of_milaap_transfer === 'Fully Disbursed' ? 'selected' : ''}>Fully Disbursed</option>
+							</select>
+						</div>
+						<div style="margin-bottom:16px">
+							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">Refund Amount (if any)</label>
+							<input type="number" step="0.01" class="form-control" id="cl-close-refund-amount" value="${doc.refund_amount_if_any || ''}">
+						</div>
+						<div style="margin-bottom:16px">
 							<label style="font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px">Milaap Recommendation</label>
 							<textarea class="form-control" id="cl-close-milaap-recommendation" rows="4">${frappe.utils.escape_html(doc.milaap_recommendation || '')}</textarea>
 						</div>
@@ -1082,7 +1139,9 @@ class CaseListView {
 				approved_amount: amount,
 				utr_details: modal.find('#cl-close-utr').val(),
 				milaap_recommendation: modal.find('#cl-close-milaap-recommendation').val(),
-				milaap_campaign_link: modal.find('#cl-close-milaap-link').val()
+				milaap_campaign_link: modal.find('#cl-close-milaap-link').val(),
+				status_of_milaap_transfer: modal.find('#cl-close-milaap-status').val(),
+				refund_amount_if_any: modal.find('#cl-close-refund-amount').val()
 			};
 			modal.remove();
 			self.submit_close_case(doc, payload);
@@ -1099,6 +1158,8 @@ class CaseListView {
 			doc.utr_details = payload.utr_details;
 			doc.milaap_recommendation = payload.milaap_recommendation;
 			doc.milaap_campaign_link = payload.milaap_campaign_link;
+			doc.status_of_milaap_transfer = payload.status_of_milaap_transfer;
+			doc.refund_amount_if_any = payload.refund_amount_if_any ? parseFloat(payload.refund_amount_if_any) : doc.refund_amount_if_any;
 			frappe.show_alert({ message: 'Case closed (sample data — not saved).', indicator: 'green' });
 			self.render_detail(doc);
 			return;

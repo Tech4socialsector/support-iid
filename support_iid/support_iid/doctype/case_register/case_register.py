@@ -47,6 +47,8 @@ ACTION_LABEL = {
 	"Approve": "Approved",
 	"Decline": "Declined",
 	"Send Back": "Sent Back for Revision",
+	"Reviewer Approve": "Verified",
+	"Reviewer Decline": "Declined (Final Verification)",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -62,6 +64,17 @@ CASE_STATUS_APPROVED = "Approved"
 CASE_STATUS_REJECTED = "Rejected"
 CASE_STATUS_SENT_BACK = "Sent Back"
 CASE_STATUS_CLOSED = "Closed"
+
+# current_approval_level value once every Case Approval Stage row has
+# approved — the case sits provisionally here (case_status stays
+# "Pending Approval", nothing new added to Case Status List) until a
+# Support IID Reviewer performs the final verification via
+# reviewer_final_approval(). Not a real stage row (this isn't part of
+# case_approval_stage at all — it's a role-based, not per-case, gate,
+# same as close_case()). Deliberately NOT named after the role itself
+# ("Reviewer") — that read as if the stage were just another numbered
+# approval level, when it's actually a distinct final check.
+CASE_APPROVAL_LEVEL_REVIEWER = "Final Verification"
 CASE_STATUS_WITHDRAWN = "Withdrawn by the Requester"
 
 # Display-only relabeling — the stored case_status value (Link to Case
@@ -1188,8 +1201,8 @@ def ensure_requester_user(email, full_name=None):
 
 	try:
 		user = frappe.get_doc("User", email)
-		if "Requester" not in [r.role for r in user.get("roles") or []]:
-			user.append("roles", {"role": "Requester"})
+		if "Support IID Requester" not in [r.role for r in user.get("roles") or []]:
+			user.append("roles", {"role": "Support IID Requester"})
 			user.flags.ignore_permissions = True
 			user.save(ignore_permissions=True)
 	except Exception:
@@ -1199,18 +1212,19 @@ def ensure_requester_user(email, full_name=None):
 def _requester_only_scope_email(user=None):
 	"""
 	Returns the email to scope Case Register visibility to, if `user` should
-	be restricted to only their own cases (has the Requester role and none
-	of the broader-access roles) — None if no restriction should apply.
+	be restricted to only their own cases (has the Support IID Requester
+	role and none of the broader-access roles) — None if no restriction
+	should apply.
 	"""
 	user = user or frappe.session.user
 	if user in ("Administrator", "Guest"):
 		return None
 
 	roles = set(frappe.get_roles(user))
-	broad_access_roles = {"System Manager", "Reviewer", "Support IID Approver"}
+	broad_access_roles = {"System Manager", "Support IID Reviewer", "Support IID Approver"}
 	if roles & broad_access_roles:
 		return None
-	if "Requester" not in roles:
+	if "Support IID Requester" not in roles:
 		return None
 
 	return user
@@ -1231,7 +1245,7 @@ def _approver_only_scope_email(user=None):
 		return None
 
 	roles = set(frappe.get_roles(user))
-	if "System Manager" in roles or "Reviewer" in roles:
+	if "System Manager" in roles or "Support IID Reviewer" in roles:
 		return None
 	if "Support IID Approver" not in roles:
 		return None
@@ -1846,7 +1860,7 @@ class CaseRegister(Document):
 			getattr(self, "requestor_name", None) or getattr(self, "requestor_email", None) or "requestor"
 		)
 
-		subject = f"Request Submitted - [{self.name}] - {req_name} - For {level_label} Approval"
+		subject = f"Approval Required - [{self.name}] - {req_name} ({level_label})"
 
 		# Per-level web-form URL — carries an encrypted token (case + level +
 		# approver) instead of plain query params, so the link itself proves
@@ -1907,20 +1921,36 @@ class CaseRegister(Document):
 	# ── Requestor notification email  (sent after final decisions) ────────────
 
 	def _send_requestor_notification_email(
-		self, action, comments=None, approver_name=None, stage_idx=None, next_level_label=None
+		self,
+		action,
+		comments=None,
+		approver_name=None,
+		stage_idx=None,
+		next_level_label=None,
+		final_round=False,
 	):
 		"""
 		Plain-text notification to the requestor after every approval-chain
-		transaction — Approve (whether it's an intermediate level moving
-		the case on, or the final level closing it out) / Decline / Send
-		Back. On Send Back, includes an edit-and-resubmit link (token +
-		OTP protected) so the requestor can correct and resend the case to
-		the same approval level that returned it.
+		transaction — Approve (intermediate level moving the case on, the
+		final-verification hand-off, or the final level closing it out) /
+		Decline / Send Back. On Send Back, includes an edit-and-resubmit
+		link (token + OTP protected) so the requestor can correct and
+		resend the case to the same approval level that returned it.
 
 		next_level_label is only set for an intermediate Approve (more
 		stages remain) — distinguishes it from a final Approve, which
 		otherwise looks identical (same action string) but means something
 		different to the requestor: "still in progress" vs. "fully done".
+
+		final_round is set only when the Support IID Reviewer's own
+		verification has approved the case and routed it back to the same
+		last-stage approver for one more, final confirmation (see
+		reviewer_final_approval). Without this flag that transaction would
+		otherwise reuse the generic "moved to the next approval level"
+		copy with next_level_label set to the last stage's own label —
+		which reads as the case having regressed backward to that level,
+		when it's actually moving forward to a final confirmation with the
+		approver who already approved it.
 
 		stage_idx must be the exact stage that just performed this action —
 		passed in by the caller (which already knows it), rather than
@@ -1945,18 +1975,36 @@ class CaseRegister(Document):
 
 		action_line = None
 
-		if action == "Approve" and next_level_label:
+		if action == "Approve" and final_round:
+			# The Reviewer's verification approved the case and routed it
+			# back to the same last-stage approver for one final
+			# confirmation — NOT a regression to an earlier level, so this
+			# gets its own copy rather than reusing the generic
+			# "moved to the next approval level" message below.
+			subject = f"Case Update - [{self.name}] - {beneficiary}"
+			heading = "**Your case has passed final verification.**"
+			body_extra = (
+				f"The support request for {beneficiary or 'the beneficiary'} "
+				f"has completed final verification by **{approver_name or 'the review team'}** "
+				f"and is now awaiting one last confirmation from the approving "
+				f"team before it is marked Approved."
+			)
+		elif action == "Approve" and next_level_label:
 			# Intermediate approval — more levels still to go. Distinct
 			# from the final Approve below: same action string, but this
 			# is "still in progress", not "fully done".
 			subject = f"Case Update - [{self.name}] - {beneficiary}"
 			heading = "**Your case has moved to the next approval level.**"
+			pending_phrase = (
+				f"pending **{next_level_label}**"
+				if next_level_label == CASE_APPROVAL_LEVEL_REVIEWER
+				else f"pending **{next_level_label}** approval"
+			)
 			body_extra = (
 				f"The support request for {beneficiary or 'the beneficiary'} "
 				f"has been approved by **{approver_name or 'the review team'}** "
-				f"and is now pending **{next_level_label}** approval. You will "
-				f"receive another update as it continues through the review "
-				f"process."
+				f"and is now {pending_phrase}. You will receive another update "
+				f"as it continues through the review process."
 			)
 		elif action == "Approve":
 			subject = f"Case Approved - [{self.name}] - {beneficiary}"
@@ -1980,10 +2028,9 @@ class CaseRegister(Document):
 			subject = f"Case Returned for Revision - [{self.name}] - {beneficiary}"
 			heading = "**Your case has been returned for revision.**"
 			body_extra = (
-				"The reviewer has requested additional information or "
-				"changes before this case can proceed. Please review the "
-				"notes below, update the details, and resubmit at your "
-				"earliest convenience."
+				"Additional information or changes are needed before this "
+				"case can proceed. Please review the notes below, update "
+				"the details, and resubmit at your earliest convenience."
 			)
 			if stage_idx is not None:
 				# The requestor now has real Desk access (a User account
@@ -2005,9 +2052,10 @@ class CaseRegister(Document):
 			body_extra,
 		]
 		if comments:
-			lines += ["", "**Reviewer notes:**", comments]
+			lines += ["", "**Notes:**", comments]
 		if action_line:
 			lines += ["", action_line]
+		lines += ["", "Regards,"]
 
 		try:
 			_send_plain_email(
@@ -2064,6 +2112,8 @@ class CaseRegister(Document):
 			"If you no longer need this request, you may withdraw it at "
 			"any time before a final decision is made:",
 			f"[Withdraw this case]({withdraw_url})",
+			"",
+			"Regards,",
 		]
 
 		attachments = []
@@ -2122,6 +2172,8 @@ class CaseRegister(Document):
 			"If you no longer need this request, you may withdraw it at "
 			"any time before a final decision is made:",
 			f"[Withdraw this case]({withdraw_url})",
+			"",
+			"Regards,",
 		]
 
 		try:
@@ -2153,23 +2205,21 @@ class CaseRegister(Document):
 
 		    Dear <approver_name>,
 
-		    This request is from <requestor> who is our point of contact from
-		    <source> for Support IID requests whose <beneficiary> is undergoing
-		    <ailment>...
+		    This request was submitted by <requestor> (<source>) on behalf
+		    of <beneficiary>, who is currently undergoing <ailment>.
 
-		    Details:
-		    Patient: …
+		    Case Details:
+		    Beneficiary: …
 		    Age: … Yrs
 		    Address: …
 		    Family: …
 		    Occupation: …
-		    Income: Rs … per month
-		    House: …
+		    Monthly Family Income: Rs …
+		    Residence: …
 		    Ailment: …
-		    Hospital: …
-		    Fund required as per hospital letter: INR …
-		    Patient's condition - …
-		    Folder - <url>
+		    Hospital / Institution: …
+		    Funds Requested: INR …
+		    Verification Notes: …
 		"""
 
 		def fget(f):
@@ -2245,55 +2295,61 @@ class CaseRegister(Document):
 
 		funds_formatted = (
 			(
-				f"INR {int(funds_req):,} funds for "
-				f"{'surgery' if is_medical else 'the request'} "
-				f"(additional to existing insurance cover)"
+				f"INR {int(funds_req):,} for "
+				f"{'surgery' if is_medical else 'the request'}, "
+				f"in addition to the existing insurance cover"
 			)
 			if funds_req
 			else "-"
 		)
 
 		intro_sentence = (
-			f"This request is from {req_name} who is our point of contact "
-			f"from {source} for Support IID requests whose {ben_name} is "
-			f"undergoing {ailment}."
+			f"This request was submitted by {req_name} ({source}) on behalf of "
+			f"{ben_name}, who is currently undergoing {ailment}."
 		)
 
 		lines = [
 			f"Dear {approver_name},",
 			"",
-			"A support request is awaiting your review as part of the Support IID approval process.",
+			f"A support request requires your review as part of the Support IID {level_label} approval.",
 			"",
 			intro_sentence,
 			"",
 		]
 
 		if previous_action:
-			prev_line = f"Previous stage: {ACTION_LABEL.get(previous_action, previous_action)}"
+			prev_stage_label = (
+				"Final verification, completed"
+				if previous_action == "Reviewer Approve"
+				else ACTION_LABEL.get(previous_action, previous_action)
+			)
+			prev_line = f"Previous stage: {prev_stage_label}"
 			if previous_comments:
-				prev_line += f" - {previous_comments}"
+				prev_line += f" — {previous_comments}"
 			lines += [prev_line, ""]
 
-		lines.append("**Details:**")
-		lines.append(f"**Patient:** {ben_name}")
+		lines.append("**Case Details:**")
+		lines.append(f"**Beneficiary:** {ben_name}")
 		lines.append(f"**Age:** {age} Yrs" if age and age != "-" else "**Age:** -")
 		lines.append(f"**Address:** {address}")
 		lines.append(f"**Family:** {family_line}")
 		lines.append(f"**Occupation:** {occupation_line}")
-		lines.append(f"**Income:** Rs {monthly_inc:,} per month" if monthly_inc else "**Income:** -")
-		lines.append(f"**House:** {residence}")
+		lines.append(f"**Monthly Family Income:** Rs {monthly_inc:,}" if monthly_inc else "**Monthly Family Income:** -")
+		lines.append(f"**Residence:** {residence}")
 		lines.append(f"**Ailment:** {ailment}" + (f", Treatment: {treatment}" if treatment else ""))
-		lines.append(f"**Hospital:** {hospital_display}")
-		lines.append(f"**Fund required as per hospital letter:** {funds_formatted}")
-		lines.append(f"**Patient's condition:** {condition}")
+		lines.append(f"**Hospital / Institution:** {hospital_display}")
+		lines.append(f"**Funds Requested:** {funds_formatted}")
+		lines.append(f"**Verification Notes:** {condition}")
 		lines.append("")
 		lines.append(
-			"The full case summary PDF and all supporting documents are attached for your reference."
+			"The case summary and all supporting documents are attached for your reference."
 		)
 		lines.append("Please review the request and record your decision using the link below:")
 		lines.append("")
-		lines.append(f"[Review & Approve / Decline / Send Back]({webform_url})")
-		lines.append(f"[View in Case Registry]({registry_url})")
+		lines.append(f"[Review This Case]({webform_url})")
+		lines.append(f"[Open in Case Registry]({registry_url})")
+		lines.append("")
+		lines.append("Regards,")
 
 		return lines
 
@@ -2501,18 +2557,47 @@ def process_case_approval(
 			)
 
 		else:
-			# All stages approved — final approval
-			doc.case_status = CASE_STATUS_APPROVED
-			doc.current_approval_level = ""
-			if not doc.approved_date:
-				doc.approved_date = today()
-			doc.save(ignore_permissions=True)
-			_safe_commit(case_name)
-			doc._send_requestor_notification_email(
-				action="Approve",
-				comments=comments,
-				approver_name=approver_name,
+			# All approval-stage levels have approved. The full chain has
+			# TWO rounds of this happening at the last level, told apart
+			# by whether a "Reviewer Approve" has already been logged for
+			# this case:
+			#   Round 1 (no prior Reviewer Approve) -> PROVISIONAL approval
+			#     only. Case waits on the Support IID Reviewer's own final
+			#     verification (reviewer_final_approval, below), which — on
+			#     Approve — resets this exact same last stage back to
+			#     "Awaiting For Approval" and routes back here for round 2.
+			#   Round 2 (a prior Reviewer Approve already logged) -> this
+			#     IS the real final approval. case_status actually becomes
+			#     Approved, and close_case() (Reviewer-gated, unchanged)
+			#     is what the case moves to next from there.
+			already_verified_by_reviewer = any(
+				(log.action or "") == "Reviewer Approve" for log in (doc.get("case_approval_log") or [])
 			)
+
+			if already_verified_by_reviewer:
+				doc.case_status = CASE_STATUS_APPROVED
+				doc.current_approval_level = ""
+				if not doc.approved_date:
+					doc.approved_date = today()
+				doc.save(ignore_permissions=True)
+				_safe_commit(case_name)
+				doc._send_requestor_notification_email(
+					action="Approve",
+					comments=comments,
+					approver_name=approver_name,
+				)
+			else:
+				doc.case_status = CASE_STATUS_PENDING
+				doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
+				doc.save(ignore_permissions=True)
+				_safe_commit(case_name)
+				doc._send_requestor_notification_email(
+					action="Approve",
+					comments=comments,
+					approver_name=approver_name,
+					next_level_label=CASE_APPROVAL_LEVEL_REVIEWER,
+				)
+				_notify_reviewers_of_provisional_approval(doc, approver_name, comments)
 
 	result = {
 		"case_status": doc.case_status,
@@ -2685,7 +2770,7 @@ def _notify_reviewers_of_withdrawal(doc, reason):
 	"""
 	reviewer_emails = frappe.get_all(
 		"Has Role",
-		filters={"role": "Reviewer", "parenttype": "User"},
+		filters={"role": "Support IID Reviewer", "parenttype": "User"},
 		pluck="parent",
 	)
 	reviewer_emails = [e for e in reviewer_emails if e and e not in ("Administrator", "Guest")]
@@ -2697,7 +2782,7 @@ def _notify_reviewers_of_withdrawal(doc, reason):
 			recipients=reviewer_emails,
 			subject=f"Case Withdrawn - [{doc.name}] - {doc.beneficiary_name or ''}",
 			lines=[
-				"Dear Reviewer,",
+				"Dear Support IID Reviewer,",
 				"",
 				f"This is to inform you that case {doc.name} has been withdrawn by the requestor.",
 				"",
@@ -2706,10 +2791,179 @@ def _notify_reviewers_of_withdrawal(doc, reason):
 				f"**Reason given:** {reason}",
 				"",
 				"No further action is needed on this case.",
+				"",
+				"Regards,",
 			],
 		)
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), f"Reviewer withdrawal notification failed — {doc.name}")
+
+
+def _notify_reviewers_of_provisional_approval(doc, approver_name, comments=None):
+	"""
+	Emails every user holding the Support IID Reviewer role once every
+	Case Approval Stage level has approved — the case is only
+	PROVISIONALLY approved at this point (case_status stays "Pending
+	Approval", current_approval_level = "Final Verification") until one
+	of them completes the final verification via reviewer_final_approval().
+	Same "every Reviewer, not a per-case assignment" model as
+	_notify_reviewers_of_withdrawal.
+
+	Carries the same attachments an approver's own request email gets —
+	the case-summary PDF plus every supporting document as its own file
+	(see _send_approval_request_email) — so a Reviewer can actually
+	review the documents, not just a text summary, before verifying.
+	"""
+	reviewer_emails = frappe.get_all(
+		"Has Role",
+		filters={"role": "Support IID Reviewer", "parenttype": "User"},
+		pluck="parent",
+	)
+	reviewer_emails = [e for e in reviewer_emails if e and e not in ("Administrator", "Guest")]
+	if not reviewer_emails:
+		return
+
+	case_url = f"{get_url()}/desk/case-register/{doc.name}"
+	lines = [
+		"Dear Support IID Reviewer,",
+		"",
+		f"Case {doc.name} has now been approved at every approval level and "
+		f"is ready for final verification before it can be marked Approved.",
+		"",
+		f"**Beneficiary:** {doc.beneficiary_name or '-'}",
+		f"**Requestor:** {doc.requestor_name or '-'} ({doc.requestor_email or '-'})",
+		f"**Last approved by:** {approver_name or '-'}",
+	]
+	if comments:
+		lines += ["", "**Approver notes:**", comments]
+	lines += [
+		"",
+		"The full case summary PDF and all supporting documents are attached for your reference.",
+		"",
+		f"[Review this case]({case_url})",
+		"",
+		"Regards,",
+	]
+
+	attachments = []
+	if doc.case_document:
+		fid = doc._get_file_id_from_url(doc.case_document)
+		if fid:
+			attachments.append({"fid": fid})
+	for row in doc.get("supporting_documents") or []:
+		url = row.get("attachment")
+		if not url:
+			continue
+		fid = doc._get_file_id_from_url(url, document_name=row.get("document_name"))
+		if fid:
+			attachments.append({"fid": fid})
+
+	try:
+		_send_plain_email(
+			recipients=reviewer_emails,
+			subject=f"Final Verification Needed - [{doc.name}] - {doc.beneficiary_name or ''}",
+			lines=lines,
+			attachments=attachments,
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), f"Reviewer verification notification failed — {doc.name}")
+
+
+@frappe.whitelist()
+def reviewer_final_approval(case_name, action, comments=None):
+	"""
+	The Support IID Reviewer's own provisional final verification —
+	happens once every Case Approval Stage level has already approved
+	(see the "else" branch of process_case_approval, which sets
+	current_approval_level to CASE_APPROVAL_LEVEL_REVIEWER instead of
+	case_status=Approved directly). Not a variant of process_case_approval:
+	there's no per-case Case Approval Stage row for this step to scan for
+	or check an approver_email against — it's a role-based gate, same
+	model as close_case(), not a per-case assignment.
+
+	Approve -> does NOT finalize the case. Resets the LAST approval
+	stage back to "Awaiting For Approval" and routes the case back to
+	that same approver for one more, final round — process_case_approval
+	handles that round exactly like the first, except this time it finds
+	a "Reviewer Approve" already logged and takes the real-Approved path
+	instead of coming back here again (see its own "else" branch).
+	Decline -> case_status becomes Rejected outright; this verification
+	is a genuine gate, not a rubber stamp, so a decline here behaves the
+	same as an Approver declining at any earlier stage.
+
+	Permission: Administrator, System Manager, or a user with the
+	Support IID Reviewer role (same pattern as close_case).
+	"""
+	user = frappe.session.user
+	if not (
+		user == "Administrator"
+		or "System Manager" in frappe.get_roles(user)
+		or "Support IID Reviewer" in frappe.get_roles(user)
+	):
+		frappe.throw("You don't have permission to verify this case.", frappe.PermissionError)
+
+	if action not in ("Approve", "Decline"):
+		frappe.throw("Invalid action. Must be 'Approve' or 'Decline'.")
+
+	doc = frappe.get_doc("Case Register", case_name)
+	if doc.case_status != CASE_STATUS_PENDING or doc.current_approval_level != CASE_APPROVAL_LEVEL_REVIEWER:
+		frappe.throw("This case is not awaiting final verification.")
+
+	stages = doc.get("case_approval_stage") or []
+	if not stages:
+		frappe.throw("This case has no approval stages configured.")
+	last_idx = len(stages) - 1
+	last_stage = stages[last_idx]
+
+	reviewer_name = frappe.utils.get_fullname(user) if user != "Guest" else "Support IID Reviewer"
+	log_action = "Reviewer Approve" if action == "Approve" else "Reviewer Decline"
+
+	doc.append(
+		"case_approval_log",
+		{
+			"date": today(),
+			"level": CASE_APPROVAL_LEVEL_REVIEWER,
+			"approver_name": reviewer_name,
+			"approver_name_email": user if user != "Guest" else "",
+			"action": log_action,
+			"comments": comments or "",
+		},
+	)
+
+	if action == "Approve":
+		last_level_label = last_stage.case_approval_level_decription or f"Level {last_idx + 1}"
+		last_stage.case_approval_status = "Awaiting For Approval"
+		doc.case_status = CASE_STATUS_PENDING
+		doc.current_approval_level = last_level_label
+		doc.save(ignore_permissions=True)
+		_safe_commit(case_name)
+
+		# Back to the same last-level approver for the real, final round.
+		doc._send_approval_request_email(
+			stage_idx=last_idx,
+			case_pdf_path=doc.case_document or None,
+			include_supporting_docs=True,
+			previous_action="Reviewer Approve",
+			previous_comments=comments,
+		)
+		doc._send_requestor_notification_email(
+			action="Approve",
+			comments=comments,
+			approver_name=reviewer_name,
+			final_round=True,
+		)
+	else:
+		doc.case_status = CASE_STATUS_REJECTED
+		doc.current_approval_level = ""
+		doc.save(ignore_permissions=True)
+		_safe_commit(case_name)
+		doc._send_requestor_notification_email(
+			action="Decline",
+			comments=comments,
+			approver_name=reviewer_name,
+		)
+
+	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
 
 
 @frappe.whitelist()
@@ -2739,7 +2993,13 @@ def submit_case(case_name):
 
 @frappe.whitelist()
 def close_case(
-	case_name, approved_amount=None, utr_details=None, milaap_recommendation=None, milaap_campaign_link=None
+	case_name,
+	approved_amount=None,
+	utr_details=None,
+	milaap_recommendation=None,
+	milaap_campaign_link=None,
+	status_of_milaap_transfer=None,
+	refund_amount_if_any=None,
 ):
 	"""
 	Marks an Approved case as Closed, recording the fund-transfer details
@@ -2761,7 +3021,7 @@ def close_case(
 	if not (
 		user == "Administrator"
 		or "System Manager" in frappe.get_roles(user)
-		or "Reviewer" in frappe.get_roles(user)
+		or "Support IID Reviewer" in frappe.get_roles(user)
 	):
 		frappe.throw("You don't have permission to close cases.", frappe.PermissionError)
 
@@ -2783,6 +3043,10 @@ def close_case(
 		doc.milaap_recommendation = milaap_recommendation
 	if milaap_campaign_link:
 		doc.milaap_campaign_link = milaap_campaign_link
+	if status_of_milaap_transfer:
+		doc.status_of_milaap_transfer = status_of_milaap_transfer
+	if refund_amount_if_any not in (None, ""):
+		doc.refund_amount_if_any = refund_amount_if_any
 
 	doc.case_status = CASE_STATUS_CLOSED
 	doc.save(ignore_permissions=True)
@@ -2796,6 +3060,8 @@ def close_case(
 			"utr_details": doc.utr_details,
 			"milaap_recommendation": doc.milaap_recommendation,
 			"milaap_campaign_link": doc.milaap_campaign_link,
+			"status_of_milaap_transfer": doc.status_of_milaap_transfer,
+			"refund_amount_if_any": doc.refund_amount_if_any,
 		}
 	)
 

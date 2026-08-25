@@ -186,13 +186,22 @@ class SupportIIDDashboard {
 	inject_styles() {
 		if ($('#siid-dash-style').length) return;
 		$(`<style id="siid-dash-style">
-			.sd-page { padding:22px 28px 48px; }
+			.sd-page { padding:20px 28px 48px; }
 			.sd-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
 			.sd-toolbar .sd-spacer { flex:1; }
 
-			.sd-section-heading { font-size:15px; font-weight:700; margin:0 0 14px; color:#1a1a1a; }
+			.sd-section-heading { font-size:15px; font-weight:700; margin:0 0 14px; color:var(--text-color,#1a1a1a); }
 
-			.sd-filter-bar { margin-bottom:22px; padding-bottom:18px; border-bottom:1px solid var(--border-color,#e3e8ec); }
+			/* Filter bar acts as the page's toolbar — sticky so it stays
+			   reachable while scrolling past the metric cards / charts below,
+			   with a card-like surface (bg + shadow) instead of a bare
+			   bottom border so it reads as an elevated app-shell bar. */
+			.sd-filter-bar {
+				margin-bottom:22px; padding:16px 18px; border-radius:12px;
+				background:var(--card-bg,#fff); border:1px solid var(--border-color,#e3e8ec);
+				box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+				position:sticky; top:0; z-index:5;
+			}
 			.sd-filter-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px 18px; margin-bottom:16px; }
 			.sd-filter-item label { display:block; font-size:12px; font-weight:600; color:var(--text-muted,#8d99a6); margin-bottom:6px; text-transform:uppercase; letter-spacing:.03em; }
 			.sd-filter-item .form-control { width:100%; }
@@ -214,39 +223,40 @@ class SupportIIDDashboard {
 			   white card with a subtle lift on hover. Wide and short,
 			   matching a compact dashboard-summary-card look. */
 			.sd-metric-card {
-				background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px;
-				padding:12px 14px 10px; cursor:pointer; transition:box-shadow .16s, transform .16s;
+				background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:12px;
+				padding:14px 16px 12px; cursor:pointer; transition:box-shadow .16s, transform .16s;
 				width:100%; min-height:76px; display:flex; flex-direction:column;
-				box-shadow:0 1px 2px rgba(15,23,32,.04);
+				box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
 			}
 			.sd-metric-card:hover { box-shadow:0 8px 20px rgba(15,23,32,.09); transform:translateY(-2px); }
 			.sd-metric-card.sd-disabled { cursor:default; opacity:.65; }
-			.sd-metric-card.sd-disabled:hover { box-shadow:none; transform:none; }
+			.sd-metric-card.sd-disabled:hover { box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04); transform:none; }
 
 
 			/* Export dropdown — self-contained, no Bootstrap JS dependency */
 			.sd-export-group { position:relative; display:inline-flex; }
 			.sd-export-toggle {
-				border:none; border-radius:6px; padding:6px 13px; font-size:12.5px; font-weight:600;
+				border:none; border-radius:8px; padding:6px 13px; font-size:12.5px; font-weight:600;
 				cursor:pointer; display:inline-flex; align-items:center; gap:6px;
-				background:#2490ef; color:#fff;
+				background:var(--primary,#2490ef); color:#fff; box-shadow:0 1px 2px rgba(0,0,0,.08);
+				transition:filter .12s, box-shadow .12s;
 			}
-			.sd-export-toggle:hover { background:#1a72c4; }
+			.sd-export-toggle:hover { filter:brightness(0.92); }
 			.sd-export-toggle svg:last-child { transition:transform .18s; }
 			.sd-export-group.open .sd-export-toggle svg:last-child { transform:rotate(90deg); }
 			.sd-export-menu {
 				display:none; position:absolute; top:calc(100% + 6px); right:0; z-index:9999;
-				background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:8px;
+				background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:10px;
 				box-shadow:0 8px 24px rgba(0,0,0,.14); padding:5px; min-width:180px;
 			}
 			.sd-export-group.open .sd-export-menu { display:block; }
 			.sd-export-menu-item {
-				display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:6px;
-				cursor:pointer; font-size:13px; color:#1a1a1a;
+				display:flex; align-items:center; gap:10px; padding:9px 12px; border-radius:8px;
+				cursor:pointer; font-size:13px; color:var(--text-color,#1a1a1a);
 			}
-			.sd-export-menu-item:hover { background:#f4f5f7; }
+			.sd-export-menu-item:hover { background:var(--control-bg,#f4f5f7); }
 			.sd-export-menu-icon {
-				width:24px; height:24px; border-radius:5px; display:inline-flex; align-items:center;
+				width:24px; height:24px; border-radius:6px; display:inline-flex; align-items:center;
 				justify-content:center; color:#fff; flex-shrink:0;
 			}
 
@@ -278,31 +288,32 @@ class SupportIIDDashboard {
 				white-space:nowrap; max-width:none;
 			}
 			.sd-metric-icon {
-				width:20px; height:20px; border-radius:5px; background:#f0f1f3; color:#5a6068;
+				width:22px; height:22px; border-radius:7px; background:var(--control-bg,#f0f1f3); color:#5a6068;
 				display:flex; align-items:center; justify-content:center; font-size:11px; margin-bottom:4px;
 			}
 			.sd-metric-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:2px; }
-			.sd-metric-value { font-size:20px; font-weight:700; color:#1a1a1a; line-height:1.2; }
+			.sd-metric-value { font-size:20px; font-weight:700; color:var(--text-color,#1a1a1a); line-height:1.2; }
 			.sd-metric-sub { font-size:11.5px; color:var(--text-muted,#8d99a6); margin-top:2px; }
 
-			.sd-chart-panel { background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:10px; padding:20px 22px; }
-			.sd-chart-title { font-size:13px; font-weight:700; margin-bottom:16px; color:#1a1a1a; }
+			.sd-chart-panel { background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:12px; padding:20px 22px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04); }
+			.sd-chart-title { font-size:13px; font-weight:700; margin-bottom:16px; color:var(--text-color,#1a1a1a); }
 			.sd-bar-row { margin-bottom:14px; cursor:pointer; }
 			.sd-bar-row:last-child { margin-bottom:0; }
 			.sd-bar-row-head { display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px; }
-			.sd-bar-row-label { font-weight:600; color:#1a1a1a; }
+			.sd-bar-row-label { font-weight:600; color:var(--text-color,#1a1a1a); }
 			.sd-bar-row-value { color:var(--text-muted,#8d99a6); }
-			.sd-bar-track { height:10px; background:#eef0f2; border-radius:6px; overflow:hidden; }
+			.sd-bar-track { height:10px; background:var(--control-bg,#eef0f2); border-radius:6px; overflow:hidden; }
 			.sd-bar-fill { height:100%; border-radius:6px; transition:width .2s; }
 
 			.sd-trend-toggle { display:flex; gap:4px; }
 			.sd-trend-toggle button {
-				border:1px solid var(--border-color,#d1d8dd); background:#fff; padding:5px 12px; font-size:12px;
-				cursor:pointer; color:var(--text-muted,#8d99a6); font-weight:600;
+				border:1px solid var(--border-color,#d1d8dd); background:var(--card-bg,#fff); padding:5px 12px; font-size:12px;
+				cursor:pointer; color:var(--text-muted,#8d99a6); font-weight:600; transition:background .12s, color .12s;
 			}
-			.sd-trend-toggle button:first-child { border-radius:6px 0 0 6px; }
-			.sd-trend-toggle button:last-child { border-radius:0 6px 6px 0; }
-			.sd-trend-toggle button.on { background:#1a1a1a; color:#fff; border-color:#1a1a1a; }
+			.sd-trend-toggle button:hover { background:var(--control-bg,#f4f5f7); }
+			.sd-trend-toggle button:first-child { border-radius:8px 0 0 8px; }
+			.sd-trend-toggle button:last-child { border-radius:0 8px 8px 0; }
+			.sd-trend-toggle button.on { background:var(--primary,#2490ef); color:#fff; border-color:var(--primary,#2490ef); }
 			.sd-trend-chart { display:flex; align-items:flex-end; gap:14px; height:180px; margin-top:16px; overflow-x:auto; padding-bottom:4px; }
 			.sd-trend-col { display:flex; flex-direction:column; align-items:center; min-width:44px; flex-shrink:0; height:100%; justify-content:flex-end; cursor:pointer; }
 			.sd-trend-bars { display:flex; align-items:flex-end; gap:3px; height:140px; }
@@ -319,16 +330,16 @@ class SupportIIDDashboard {
 			.sd-trend-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 
 			.sd-modal-backdrop { position:fixed; inset:0; background:rgba(15,18,22,.55); z-index:1200; display:flex; align-items:center; justify-content:center; padding:30px; }
-			.sd-modal { background:#fff; border-radius:12px; max-width:1200px; width:96vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.3); transition:max-width .15s; }
+			.sd-modal { background:var(--card-bg,#fff); border-radius:14px; max-width:1200px; width:96vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.08); transition:max-width .15s; }
 			.sd-modal.sd-modal-narrow { max-width:1150px; }
-			.sd-modal-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 22px; border-bottom:1px solid var(--border-color,#e3e8ec); border-radius:12px 12px 0 0; flex-wrap:wrap; }
+			.sd-modal-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:16px 22px; border-bottom:1px solid var(--border-color,#e3e8ec); border-radius:14px 14px 0 0; flex-wrap:wrap; }
 			.sd-modal-header-left { display:flex; align-items:center; gap:10px; min-width:0; }
 			.sd-modal-header-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 			.sd-modal-title { font-weight:700; font-size:15px; }
 			.sd-modal-count { font-weight:500; font-size:12.5px; color:var(--text-muted,#8d99a6); }
-			.sd-modal-close { cursor:pointer; font-size:22px; line-height:1; color:var(--text-muted,#8d99a6); background:none; border:none; }
-			.sd-modal-close:hover { color:#1a1a1a; }
-			.sd-modal-body { overflow:auto; flex:1; border-radius:0 0 12px 12px; }
+			.sd-modal-close { cursor:pointer; font-size:22px; line-height:1; color:var(--text-muted,#8d99a6); background:none; border:none; border-radius:6px; transition:background .12s, color .12s; }
+			.sd-modal-close:hover { color:var(--text-color,#1a1a1a); background:var(--control-bg,#f4f5f7); }
+			.sd-modal-body { overflow:auto; flex:1; border-radius:0 0 14px 14px; }
 			.sd-modal-body.sd-modal-body-padded { padding:24px; }
 
 			#sd-drilldown-table { border-collapse:collapse; width:100%; border:1px solid #d0d3d8; }
@@ -337,12 +348,14 @@ class SupportIIDDashboard {
 			.sd-pagination { display:flex; align-items:center; justify-content:space-between; padding:12px 4px 4px; font-size:12.5px; color:var(--text-muted,#8d99a6); flex-wrap:wrap; gap:8px; }
 			.sd-pagination-controls { display:flex; align-items:center; gap:5px; }
 			.sd-pagination-controls button {
-				border:1px solid var(--border-color,#d1d8dd); background:#fff; min-width:28px; height:28px; padding:0 8px;
-				font-size:12px; border-radius:5px; cursor:pointer; color:#1a1a1a; display:inline-flex; align-items:center; justify-content:center;
+				border:1px solid var(--border-color,#d1d8dd); background:var(--card-bg,#fff); min-width:28px; height:28px; padding:0 8px;
+				font-size:12px; border-radius:7px; cursor:pointer; color:var(--text-color,#1a1a1a); display:inline-flex; align-items:center; justify-content:center;
+				transition:background .12s;
 			}
+			.sd-pagination-controls button:hover:not(:disabled) { background:var(--control-bg,#f4f5f7); }
 			.sd-pagination-controls button:disabled { opacity:.35; cursor:default; }
-			.sd-pagination-controls button.sd-page-num.on { background:#1a1a1a; color:#fff; border-color:#1a1a1a; font-weight:600; }
-			#sd-drilldown-table th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); font-weight:700; position:sticky; top:0; background:#f4f5f7; cursor:pointer; user-select:none; }
+			.sd-pagination-controls button.sd-page-num.on { background:var(--primary,#2490ef); color:#fff; border-color:var(--primary,#2490ef); font-weight:600; }
+			#sd-drilldown-table th { font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); font-weight:700; position:sticky; top:0; background:var(--control-bg,#f4f5f7); cursor:pointer; user-select:none; }
 			#sd-drilldown-table th.sd-no-sort { cursor:default; }
 			#sd-drilldown-table th .sd-sort-arrow { color:#b8bfc6; margin-left:5px; font-size:11px; }
 			#sd-drilldown-table th.sd-sort-active .sd-sort-arrow { color:#1a1a1a; }
@@ -360,7 +373,7 @@ class SupportIIDDashboard {
 			.sd-hero-stat:first-child { padding-left:0; }
 			.sd-hero-stat:last-child { border-right:none; }
 			.sd-hero-stat-label { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.06em; color:var(--text-muted,#8d99a6); margin-bottom:5px; }
-			.sd-hero-stat-value { font-size:13.5px; font-weight:600; color:#1a1a1a; }
+			.sd-hero-stat-value { font-size:13.5px; font-weight:600; color:var(--text-color,#1a1a1a); }
 			.sd-hero-amount { font-size:22px; font-weight:700; }
 			.sd-hero-amount-label { font-size:11px; color:var(--text-muted,#8d99a6); text-transform:uppercase; letter-spacing:.04em; }
 			.sd-detail-hero .indicator-pill { box-shadow:none !important; }
@@ -368,15 +381,15 @@ class SupportIIDDashboard {
 
 			.sd-detail-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border-color,#d1d8dd); padding:0 24px; overflow-x:auto; }
 			.sd-detail-tab { padding:11px 14px; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-muted,#8d99a6); border-bottom:2px solid transparent; white-space:nowrap; }
-			.sd-detail-tab.on { color:#1a1a1a; border-bottom-color:var(--primary,#2490ef); }
+			.sd-detail-tab.on { color:var(--text-color,#1a1a1a); border-bottom-color:var(--primary,#2490ef); }
 			.sd-detail-panel { display:none; padding:22px 24px; }
 			.sd-detail-panel.on { display:block; }
 
 			.sd-section { padding:0 20px 20px 0; }
-			.sd-section-title { font-size:12.5px; font-weight:700; color:#1a1a1a; margin-bottom:14px; padding-bottom:9px; border-bottom:2px solid var(--border-color,#d1d8dd); }
+			.sd-section-title { font-size:12.5px; font-weight:700; color:var(--text-color,#1a1a1a); margin-bottom:14px; padding-bottom:9px; border-bottom:2px solid var(--border-color,#d1d8dd); }
 			.sd-field-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:14px 18px; }
 			.sd-field-label { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted,#8d99a6); margin-bottom:5px; }
-			.sd-field-value { font-size:13px; font-weight:500; color:#1a1a1a; word-break:break-word; line-height:1.4; }
+			.sd-field-value { font-size:13px; font-weight:500; color:var(--text-color,#1a1a1a); word-break:break-word; line-height:1.4; }
 			.sd-field-value.sd-empty { color:#b8bfc6; font-weight:400; font-style:italic; }
 
 			.sd-detail-grid { display:grid; grid-template-columns:1fr; column-gap:28px; }
@@ -389,15 +402,15 @@ class SupportIIDDashboard {
 			.sd-family-table th { border:none; border-bottom:1px solid var(--border-color,#d1d8dd); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); text-align:left; padding:9px 12px; }
 			.sd-family-table td { border:none; border-bottom:1px solid var(--border-color,#f0f2f5); padding:9px 12px; font-size:13px; }
 
-			.sd-doc-accordion { border:1px solid var(--border-color,#e3e8ec); border-radius:8px; overflow:hidden; }
+			.sd-doc-accordion { border:1px solid var(--border-color,#e3e8ec); border-radius:10px; overflow:hidden; }
 			.sd-doc-row { border-bottom:1px solid var(--border-color,#e3e8ec); }
 			.sd-doc-row:last-child { border-bottom:none; }
 			.sd-doc-row-head { display:flex; align-items:center; gap:12px; padding:13px 16px; cursor:pointer; }
-			.sd-doc-row-head:hover { background:#f7f9fb; }
+			.sd-doc-row-head:hover { background:var(--subtle-fg,#f7f9fb); }
 			.sd-doc-row.sd-doc-missing .sd-doc-row-head { cursor:default; opacity:.6; }
 			.sd-doc-chevron { font-size:11px; color:var(--text-muted,#8d99a6); transition:transform .15s; flex-shrink:0; width:12px; }
 			.sd-doc-row.sd-doc-open .sd-doc-chevron { transform:rotate(90deg); }
-			.sd-doc-icon-sm { width:28px; height:28px; border-radius:6px; background:var(--primary,#2490ef); color:#fff; display:flex; align-items:center; justify-content:center; font-size:9.5px; font-weight:700; text-transform:uppercase; flex-shrink:0; }
+			.sd-doc-icon-sm { width:28px; height:28px; border-radius:8px; background:var(--primary,#2490ef); color:#fff; display:flex; align-items:center; justify-content:center; font-size:9.5px; font-weight:700; text-transform:uppercase; flex-shrink:0; }
 			.sd-doc-title { font-weight:600; font-size:13px; flex-shrink:0; }
 			.sd-doc-remarks { color:var(--text-muted,#8d99a6); font-size:12px; }
 			.sd-doc-row-body { display:none; padding:0 16px 18px 40px; }
@@ -405,10 +418,10 @@ class SupportIIDDashboard {
 
 			.sd-copy-field { display:inline-flex; align-items:center; gap:7px; }
 			.sd-copy-btn {
-				border:none; background:#f0f1f3; color:var(--text-muted,#8d99a6); cursor:pointer;
-				font-size:10.5px; padding:2px 7px; border-radius:4px; line-height:1.6;
+				border:none; background:var(--control-bg,#f0f1f3); color:var(--text-muted,#8d99a6); cursor:pointer;
+				font-size:10.5px; padding:2px 7px; border-radius:5px; line-height:1.6; transition:background .12s, color .12s;
 			}
-			.sd-copy-btn:hover { background:#e3e5e8; color:#1a1a1a; }
+			.sd-copy-btn:hover { background:#e3e5e8; color:var(--text-color,#1a1a1a); }
 
 			.sd-stage-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border-color,#f0f2f5); font-size:13px; }
 			.sd-log-item { padding:10px 0; border-bottom:1px solid var(--border-color,#f0f2f5); font-size:13px; }
@@ -424,13 +437,41 @@ class SupportIIDDashboard {
 			.btn-group { position:relative; display:inline-block; }
 			.dropdown-menu {
 				display:none; position:absolute; top:100%; right:0; margin-top:6px; min-width:170px;
-				background:#fff; border:1px solid var(--border-color,#d1d8dd); border-radius:8px;
+				background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:10px;
 				box-shadow:0 8px 24px rgba(0,0,0,.14); padding:5px 0; z-index:50;
 			}
 			.dropdown-menu.show { display:block; }
-			.dropdown-item { display:block; padding:8px 16px; font-size:13px; color:#1a1a1a; text-decoration:none; cursor:pointer; }
-			.dropdown-item:hover { background:#f4f5f7; }
+			.dropdown-item { display:block; padding:8px 16px; font-size:13px; color:var(--text-color,#1a1a1a); text-decoration:none; cursor:pointer; }
+			.dropdown-item:hover { background:var(--control-bg,#f4f5f7); }
 			.sd-action-modal-body label { font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted,#8d99a6);display:block;margin-bottom:6px; }
+
+			/* Buttons & inputs — tactile hover + accent-blue focus ring, consistent with Case Registry */
+			.sd-page .btn, .sd-modal .btn { border-radius:8px; transition:box-shadow .12s, filter .12s, background .12s; }
+			.sd-page .btn-primary, .sd-modal .btn-primary, .sd-modal button#sd-action-submit {
+				box-shadow:0 1px 2px rgba(0,0,0,.08);
+			}
+			.sd-page .btn-primary:hover, .sd-modal .btn-primary:hover, .sd-modal button#sd-action-submit:hover { filter:brightness(0.93); }
+			.sd-page .form-control, .sd-modal .form-control {
+				border-radius:8px; border:1px solid var(--border-color,#d1d8dd); background:var(--control-bg,var(--card-bg,#fff));
+				transition:border-color .12s, box-shadow .12s;
+			}
+			.sd-page .form-control:focus, .sd-modal .form-control:focus {
+				border-color:var(--primary,#2490ef); box-shadow:0 0 0 2px rgba(36,144,239,.18); outline:none;
+			}
+
+			/* Mobile — collapse metric/filter/field grids to a single column,
+			   keep wide tables horizontally scrollable (already wrapped via
+			   .sd-table-scroll / #cl-table's own wrapper), drop sticky filter
+			   bar so it doesn't eat vertical space on small screens. */
+			@media (max-width: 640px) {
+				.sd-page { padding:14px 14px 36px; }
+				.sd-metrics-grid { grid-template-columns:1fr; }
+				.sd-filter-grid { grid-template-columns:1fr; }
+				.sd-filter-bar { position:static; }
+				.sd-field-grid { grid-template-columns:1fr; }
+				.sd-detail-grid .sd-section { border-right:none !important; }
+				.sd-hero-stat { padding:0 12px; }
+			}
 		</style>`).appendTo('head');
 	}
 
@@ -1394,6 +1435,19 @@ class SupportIIDDashboard {
 							<input type="text" class="form-control" id="sd-close-utr" value="${frappe.utils.escape_html(doc.utr_details || '')}">
 						</div>
 						<div style="margin-bottom:14px">
+							<label>Status of Milaap Transfer</label>
+							<select class="form-control" id="sd-close-milaap-status">
+								<option value="" ${!doc.status_of_milaap_transfer ? 'selected' : ''}></option>
+								<option value="Pending" ${doc.status_of_milaap_transfer === 'Pending' ? 'selected' : ''}>Pending</option>
+								<option value="Partially Disbursed" ${doc.status_of_milaap_transfer === 'Partially Disbursed' ? 'selected' : ''}>Partially Disbursed</option>
+								<option value="Fully Disbursed" ${doc.status_of_milaap_transfer === 'Fully Disbursed' ? 'selected' : ''}>Fully Disbursed</option>
+							</select>
+						</div>
+						<div style="margin-bottom:14px">
+							<label>Refund Amount (if any)</label>
+							<input type="number" step="0.01" class="form-control" id="sd-close-refund-amount" value="${doc.refund_amount_if_any || ''}">
+						</div>
+						<div style="margin-bottom:14px">
 							<label>Milaap Recommendation</label>
 							<textarea class="form-control" id="sd-close-milaap-recommendation" rows="3">${frappe.utils.escape_html(doc.milaap_recommendation || '')}</textarea>
 						</div>
@@ -1425,7 +1479,9 @@ class SupportIIDDashboard {
 				approved_amount: amount,
 				utr_details: modal.find('#sd-close-utr').val(),
 				milaap_recommendation: modal.find('#sd-close-milaap-recommendation').val(),
-				milaap_campaign_link: modal.find('#sd-close-milaap-link').val()
+				milaap_campaign_link: modal.find('#sd-close-milaap-link').val(),
+				status_of_milaap_transfer: modal.find('#sd-close-milaap-status').val(),
+				refund_amount_if_any: modal.find('#sd-close-refund-amount').val()
 			};
 			modal.remove();
 			self.submit_close_case(doc, payload, onDone);
@@ -1458,7 +1514,7 @@ class SupportIIDDashboard {
 		var user = frappe.session.user;
 		var is_admin = user === 'Administrator' ||
 			(frappe.user_roles || []).indexOf('System Manager') > -1;
-		var can_close = is_admin || (frappe.user_roles || []).indexOf('Reviewer') > -1;
+		var can_close = is_admin || (frappe.user_roles || []).indexOf('Support IID Reviewer') > -1;
 
 		if (doc.case_status === 'Approved') {
 			if (!can_close) return '';
@@ -1576,6 +1632,7 @@ class SupportIIDDashboard {
 
 		var fam = doc.family_members || [];
 		var fam_html = fam.length ? `
+			<div style="overflow-x:auto">
 			<table class="sd-family-table">
 				<thead><tr><th>Name</th><th>Relationship</th><th>Age</th><th>Occupation</th><th>Monthly Income</th><th>Qualification</th></tr></thead>
 				<tbody>${fam.map((m) => `<tr>
@@ -1586,7 +1643,8 @@ class SupportIIDDashboard {
 					<td>${format_currency(m.monthly_income || 0)}</td>
 					<td>${frappe.utils.escape_html(m.qualification || '')}</td>
 				</tr>`).join('')}</tbody>
-			</table>` : '<div class="sd-empty-note">No family members added.</div>';
+			</table>
+			</div>` : '<div class="sd-empty-note">No family members added.</div>';
 
 		var stages = doc.case_approval_stage || [];
 		var stages_html = stages.length ? stages.map((s) => {
@@ -1690,6 +1748,16 @@ class SupportIIDDashboard {
 							${row('Genuineness Assessment', doc.genuineness_assessment, true)}
 							${row('Vulnerability Assessment', doc.vulnerability_assessment, true)}
 							${row('Milaap Recommendation', doc.milaap_recommendation, true)}
+						</div>
+					</div>
+					<div class="sd-section sd-span-full">
+						<div class="sd-section-title">Closure of Case</div>
+						<div class="sd-field-grid">
+							${row('Approved Amount', doc.approved_amount ? format_currency(doc.approved_amount) : '')}
+							${row('Date of Transfer', doc.date_of_transfer ? frappe.datetime.str_to_user(doc.date_of_transfer) : '')}
+							${row('UTR Details', doc.utr_details)}
+							${row('Status of Milaap Transfer', doc.status_of_milaap_transfer)}
+							${row('Refund Amount (if any)', doc.refund_amount_if_any ? format_currency(doc.refund_amount_if_any) : '')}
 						</div>
 					</div>
 				</div>

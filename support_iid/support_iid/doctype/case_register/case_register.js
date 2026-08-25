@@ -70,46 +70,184 @@ function case_register_call_with_loader(opts) {
 	frappe.call(opts);
 }
 
-// ── Branded confirmation dialog ──────────────────────────────────────────
+// ── Custom modal system ───────────────────────────────────────────────────
+// A fully custom overlay/card — not frappe.ui.Dialog — for every one of
+// this form's own significant actions (Submit, Resubmit, Withdraw, Take
+// Action, Reviewer Sign-off). Shares the same visual language as the
+// branded loader above (logo, accent blue #2490ef, neutral #36414c text)
+// instead of Frappe's generic modal chrome, with its own focus handling,
+// Escape-to-close, and backdrop-click-to-close.
+if (!document.getElementById("case-register-modal-style")) {
+	var modal_style = document.createElement("style");
+	modal_style.id = "case-register-modal-style";
+	modal_style.textContent =
+		"@keyframes caseRegisterModalIn { from { opacity:0; transform:translateY(8px) scale(.98); } to { opacity:1; transform:translateY(0) scale(1); } }" +
+		"@keyframes caseRegisterFadeIn { from { opacity:0; } to { opacity:1; } }" +
+		".cr-modal-field:focus { outline:none; border-color:#2490ef !important; box-shadow:0 0 0 3px rgba(36,144,239,.15); }" +
+		".cr-modal-btn-primary:hover { background:#1a7bd1 !important; }" +
+		".cr-modal-btn-secondary:hover { background:#eef1f4 !important; }" +
+		".cr-modal-close:hover { background:#eef1f4 !important; }";
+	document.head.appendChild(modal_style);
+}
+
+// opts: { title, message, fields: [{fieldname, type: 'select'|'text'|'check', label, options, default, reqd}],
+//         primary_label, on_submit(values) }
+function case_register_open_modal(opts) {
+	var overlay = document.createElement("div");
+	overlay.style.cssText =
+		"position:fixed;inset:0;z-index:100000;background:rgba(20,26,32,.45);" +
+		"backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;" +
+		"padding:20px;animation:caseRegisterFadeIn .15s ease-out;";
+
+	var field_html = (opts.fields || [])
+		.map(function (f) {
+			var label_html =
+				'<label style="display:block;font-size:13.5px;font-weight:600;color:#4a5560;margin-bottom:7px;">' +
+				frappe.utils.escape_html(f.label) +
+				(f.reqd ? ' <span style="color:#e0524c;">*</span>' : "") +
+				"</label>";
+			var base_input_style =
+				"width:100%;padding:10px 13px;font-size:14.5px;border:1.5px solid #dde3e8;" +
+				"border-radius:9px;color:#1a2229;background:#fff;box-sizing:border-box;transition:border-color .12s;";
+
+			if (f.type === "select") {
+				var opts_html = (f.options || [])
+					.map(function (o) {
+						return (
+							'<option value="' +
+							frappe.utils.escape_html(o) +
+							'"' +
+							(o === f.default ? " selected" : "") +
+							">" +
+							frappe.utils.escape_html(o) +
+							"</option>"
+						);
+					})
+					.join("");
+				return (
+					'<div style="margin-bottom:14px;">' +
+					label_html +
+					'<select class="cr-modal-field" data-fieldname="' +
+					f.fieldname +
+					'" style="' +
+					base_input_style +
+					'appearance:auto;">' +
+					opts_html +
+					"</select></div>"
+				);
+			}
+			if (f.type === "check") {
+				return (
+					'<label style="display:flex;align-items:flex-start;gap:10px;margin-bottom:14px;cursor:pointer;font-size:14px;color:#4a5560;line-height:1.5;">' +
+					'<input type="checkbox" class="cr-modal-field" data-fieldname="' +
+					f.fieldname +
+					'" style="margin-top:2px;width:17px;height:17px;accent-color:#2490ef;flex-shrink:0;cursor:pointer;">' +
+					"<span>" +
+					frappe.utils.escape_html(f.label) +
+					"</span></label>"
+				);
+			}
+			// text / textarea
+			return (
+				'<div style="margin-bottom:14px;">' +
+				label_html +
+				'<textarea class="cr-modal-field" data-fieldname="' +
+				f.fieldname +
+				'" rows="3" style="' +
+				base_input_style +
+				'resize:vertical;font-family:inherit;"></textarea></div>'
+			);
+		})
+		.join("");
+
+	overlay.innerHTML =
+		'<div style="background:#fff;border-radius:16px;width:100%;max-width:520px;' +
+		'box-shadow:0 16px 48px rgba(20,26,32,.24);animation:caseRegisterModalIn .18s cubic-bezier(.2,.8,.3,1);' +
+		'overflow:hidden;">' +
+		'<div style="padding:28px 30px 6px;display:flex;align-items:flex-start;gap:14px;">' +
+		'<img src="/assets/support_iid/images/apf_logo.png" style="width:40px;height:40px;object-fit:contain;flex-shrink:0;margin-top:2px;">' +
+		'<div style="flex:1;">' +
+		(opts.title
+			? '<div style="font-size:18.5px;font-weight:600;color:#1a2229;margin-bottom:5px;">' +
+			  frappe.utils.escape_html(opts.title) +
+			  "</div>"
+			: "") +
+		(opts.message
+			? '<div style="font-size:14.5px;color:#5c6773;line-height:1.55;">' +
+			  frappe.utils.escape_html(opts.message) +
+			  "</div>"
+			: "") +
+		"</div>" +
+		'<button class="cr-modal-close" style="background:none;border:none;font-size:19px;color:#9aa4ad;' +
+		'cursor:pointer;line-height:1;padding:5px;border-radius:7px;flex-shrink:0;">✕</button>' +
+		"</div>" +
+		'<div style="padding:22px 30px 4px;">' +
+		field_html +
+		"</div>" +
+		'<div style="padding:16px 30px 26px;display:flex;justify-content:flex-end;gap:12px;">' +
+		'<button class="cr-modal-btn-secondary" style="padding:9px 18px;font-size:14px;font-weight:500;' +
+		"border:1.5px solid #dde3e8;background:#fff;color:#4a5560;border-radius:9px;cursor:pointer;transition:background .12s;\">" +
+		__("Cancel") +
+		"</button>" +
+		'<button class="cr-modal-btn-primary" style="padding:9px 20px;font-size:14px;font-weight:600;' +
+		"border:none;background:#2490ef;color:#fff;border-radius:9px;cursor:pointer;transition:background .12s;\">" +
+		frappe.utils.escape_html(opts.primary_label || __("Confirm")) +
+		"</button>" +
+		"</div>" +
+		"</div>";
+
+	document.body.appendChild(overlay);
+
+	function close() {
+		overlay.remove();
+		document.removeEventListener("keydown", on_key);
+	}
+	function on_key(e) {
+		if (e.key === "Escape") close();
+	}
+	document.addEventListener("keydown", on_key);
+	overlay.addEventListener("mousedown", function (e) {
+		if (e.target === overlay) close();
+	});
+	overlay.querySelector(".cr-modal-close").addEventListener("click", close);
+	overlay.querySelector(".cr-modal-btn-secondary").addEventListener("click", close);
+	overlay.querySelector(".cr-modal-btn-primary").addEventListener("click", function () {
+		var values = {};
+		overlay.querySelectorAll(".cr-modal-field").forEach(function (el) {
+			values[el.dataset.fieldname] = el.type === "checkbox" ? el.checked : el.value;
+		});
+		for (var i = 0; i < (opts.fields || []).length; i++) {
+			var f = opts.fields[i];
+			if (f.reqd && !values[f.fieldname]) {
+				frappe.show_alert({
+					message: __("{0} is required.", [f.label]),
+					indicator: "orange",
+				});
+				return;
+			}
+		}
+		opts.on_submit(values, close);
+	});
+
+	var first_input = overlay.querySelector(".cr-modal-field");
+	if (first_input) first_input.focus();
+}
+
 // Used in place of frappe.confirm for the app's own significant, one-way
 // actions (Submit, Resubmit) — carries the APF logo instead of Frappe's
 // bare Yes/No prompt, and requires an explicit declaration checkbox
 // (unticked by default) before the action can actually be confirmed,
 // rather than a single click on "Yes" being enough on its own.
 function case_register_branded_confirm(message, declaration_label, on_confirm) {
-	var dialog = new frappe.ui.Dialog({
-		title: "",
-		centered: true,
-		fields: [
-			{
-				fieldname: "case_register_confirm_message",
-				fieldtype: "HTML",
-				options:
-					'<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">' +
-					'<img src="/assets/support_iid/images/apf_logo.png" style="width:40px;height:40px;object-fit:contain;flex-shrink:0;">' +
-					'<div style="font-size:14px;color:#36414c;line-height:1.5;">' +
-					frappe.utils.escape_html(message) +
-					"</div>" +
-					"</div>",
-			},
-			{
-				fieldname: "declaration",
-				fieldtype: "Check",
-				label: declaration_label,
-				reqd: 1,
-			},
-		],
-		primary_action_label: __("Confirm"),
-		primary_action: function (values) {
-			if (!values.declaration) {
-				frappe.show_alert({ message: __("Please confirm the declaration to proceed."), indicator: "orange" });
-				return;
-			}
-			dialog.hide();
+	case_register_open_modal({
+		message: message,
+		fields: [{ fieldname: "declaration", type: "check", label: declaration_label, reqd: 1 }],
+		primary_label: __("Confirm"),
+		on_submit: function (values, close) {
+			close();
 			on_confirm();
 		},
 	});
-	dialog.show();
 }
 
 frappe.ui.form.on("Case Register", {
@@ -306,7 +444,7 @@ frappe.ui.form.on("Case Register", {
 		// approver was never getting notified).
 		var current_roles = frappe.user_roles || [];
 		var can_edit_approval_stage =
-			current_roles.includes("Reviewer") || current_roles.includes("System Manager");
+			current_roles.includes("Support IID Reviewer") || current_roles.includes("System Manager");
 		frm.set_df_property("case_approval_stage", "read_only", can_edit_approval_stage ? 0 : 1);
 		frm.refresh_field("case_approval_stage");
 
@@ -321,6 +459,7 @@ frappe.ui.form.on("Case Register", {
 		apply_requester_post_submit_view(frm);
 		apply_approver_read_only_view(frm);
 		apply_approver_action_button(frm);
+		apply_reviewer_final_approval_button(frm);
 
 		if (frm.doc.case_status !== "Draft" || frm.is_new()) return;
 
@@ -731,9 +870,9 @@ function case_register_validate_dob(frm) {
 function apply_requester_post_submit_view(frm) {
 	var roles = frappe.user_roles || [];
 	var is_requester_only =
-		roles.includes("Requester") &&
+		roles.includes("Support IID Requester") &&
 		!roles.includes("System Manager") &&
-		!roles.includes("Reviewer") &&
+		!roles.includes("Support IID Reviewer") &&
 		!roles.includes("Support IID Approver");
 
 	if (!is_requester_only || frm.doc.case_status === "Draft" || frm.is_new()) return;
@@ -799,8 +938,8 @@ function apply_approver_read_only_view(frm) {
 	var is_approver_only =
 		roles.includes("Support IID Approver") &&
 		!roles.includes("System Manager") &&
-		!roles.includes("Reviewer") &&
-		!roles.includes("Requester");
+		!roles.includes("Support IID Reviewer") &&
+		!roles.includes("Support IID Requester");
 
 	if (!is_approver_only || frm.is_new()) return;
 
@@ -808,52 +947,26 @@ function apply_approver_read_only_view(frm) {
 }
 
 function withdraw_case_from_desk_dialog(frm) {
-	var dialog = new frappe.ui.Dialog({
-		title: "",
-		centered: true,
+	case_register_open_modal({
+		title: __("Withdraw Case"),
+		message: __("This cannot be undone — you'll need to submit a new request if you change your mind."),
 		fields: [
-			{
-				fieldname: "case_register_withdraw_header",
-				fieldtype: "HTML",
-				options:
-					'<div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;">' +
-					'<img src="/assets/support_iid/images/apf_logo.png" style="width:40px;height:40px;object-fit:contain;flex-shrink:0;">' +
-					'<div style="font-size:14px;color:#36414c;line-height:1.5;">' +
-					__("Withdraw this case? This cannot be undone — you'll need to submit a new request if you change your mind.") +
-					"</div>" +
-					"</div>",
-			},
-			{
-				fieldname: "reason",
-				fieldtype: "Small Text",
-				label: __("Reason for withdrawing"),
-				reqd: 1,
-			},
-			{
-				fieldname: "declaration",
-				fieldtype: "Check",
-				label: __("I confirm I want to withdraw this case."),
-				reqd: 1,
-			},
+			{ fieldname: "reason", type: "text", label: __("Reason for withdrawing"), reqd: 1 },
+			{ fieldname: "declaration", type: "check", label: __("I confirm I want to withdraw this case."), reqd: 1 },
 		],
-		primary_action_label: __("Withdraw"),
-		primary_action: function (values) {
-			if (!values.declaration) {
-				frappe.show_alert({ message: __("Please confirm the declaration to proceed."), indicator: "orange" });
-				return;
-			}
+		primary_label: __("Withdraw"),
+		on_submit: function (values, close) {
 			case_register_call_with_loader({
 				method: "support_iid.support_iid.doctype.case_register.case_register.withdraw_case_from_desk",
 				args: { case_name: frm.doc.name, reason: values.reason },
 				freeze_message: __("Withdrawing..."),
 				callback: function () {
-					dialog.hide();
+					close();
 					frm.reload_doc();
 				},
 			});
 		},
 	});
-	dialog.show();
 }
 
 // Shows a "Take Action" primary button — Approve / Send Back / Decline,
@@ -903,7 +1016,6 @@ function take_action_dialog(frm, current_stage) {
 	var level_label = current_stage.case_approval_level_decription || __("this stage");
 	var dialog = new frappe.ui.Dialog({
 		title: __("Take Action — {0}", [level_label]),
-		centered: true,
 		fields: [
 			{
 				fieldname: "action",
@@ -913,11 +1025,7 @@ function take_action_dialog(frm, current_stage) {
 				default: "Approve",
 				reqd: 1,
 			},
-			{
-				fieldname: "comments",
-				fieldtype: "Small Text",
-				label: __("Comments"),
-			},
+			{ fieldname: "comments", fieldtype: "Small Text", label: __("Comments") },
 		],
 		primary_action_label: __("Submit"),
 		primary_action: function (values) {
@@ -933,6 +1041,58 @@ function take_action_dialog(frm, current_stage) {
 		},
 	});
 	dialog.show();
+}
+
+// Shows a "Final Verification" primary button once every Case Approval
+// Stage level has approved (current_approval_level is set to "Final
+// Verification" by process_case_approval's own final-stage branch —
+// case_status stays "Pending Approval" throughout; this is a provisional
+// approval, not yet the real thing). Any Support IID Reviewer/System
+// Manager/Administrator can act — this is a role-based gate here, not a
+// per-case assignment, so there's no approver_email to match against
+// like apply_approver_action_button does for ordinary stages.
+function apply_reviewer_final_approval_button(frm) {
+	if (frm.is_new()) return;
+	if (frm.doc.case_status !== "Pending Approval" || frm.doc.current_approval_level !== "Final Verification")
+		return;
+
+	var roles = frappe.user_roles || [];
+	var can_act =
+		frappe.session.user === "Administrator" ||
+		roles.includes("System Manager") ||
+		roles.includes("Support IID Reviewer");
+	if (!can_act) return;
+
+	frm.page.set_primary_action(__("Final Verification"), () => reviewer_final_approval_dialog(frm));
+}
+
+function reviewer_final_approval_dialog(frm) {
+	case_register_open_modal({
+		title: __("Final Verification"),
+		fields: [
+			{
+				fieldname: "action",
+				type: "select",
+				label: __("Action"),
+				options: ["Approve", "Decline"],
+				default: "Approve",
+				reqd: 1,
+			},
+			{ fieldname: "comments", type: "text", label: __("Comments") },
+		],
+		primary_label: __("Submit"),
+		on_submit: function (values, close) {
+			case_register_call_with_loader({
+				method: "support_iid.support_iid.doctype.case_register.case_register.reviewer_final_approval",
+				args: { case_name: frm.doc.name, action: values.action, comments: values.comments },
+				freeze_message: __("Processing..."),
+				callback: function () {
+					close();
+					frm.reload_doc();
+				},
+			});
+		},
+	});
 }
 
 function submit_draft_case(frm) {

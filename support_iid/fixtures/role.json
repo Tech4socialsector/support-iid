@@ -6,10 +6,10 @@
   "doctype": "Role",
   "home_page": "support-iid-dashboard",
   "is_custom": 0,
-  "modified": "2026-08-11 11:34:37.689635",
-  "name": "Requester",
+  "modified": "2026-08-24 00:00:00",
+  "name": "Support IID Requester",
   "restrict_to_domain": null,
-  "role_name": "Requester",
+  "role_name": "Support IID Requester",
   "two_factor_auth": 0
  },
  {
@@ -32,10 +32,10 @@
   "doctype": "Role",
   "home_page": null,
   "is_custom": 0,
-  "modified": "2026-08-04 15:22:21.160083",
-  "name": "Reviewer",
+  "modified": "2026-08-24 00:00:00",
+  "name": "Support IID Reviewer",
   "restrict_to_domain": null,
-  "role_name": "Reviewer",
+  "role_name": "Support IID Reviewer",
   "two_factor_auth": 0
  }
 ]

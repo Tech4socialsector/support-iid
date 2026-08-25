@@ -26,7 +26,11 @@ app_license = "mit"
 
 # include js, css files in header of desk.html
 # app_include_css = "/assets/support_iid/css/support_iid.css"
-# app_include_js = "/assets/support_iid/js/support_iid.js"
+
+# Registers the Desk as an installable PWA — injects the manifest <link>
+# and registers the (deliberately no-op) service worker. See
+# public/js/pwa_register.js and www/manifest.json / www/sw.js.
+app_include_js = "/assets/support_iid/js/pwa_register.js"
 
 # include js, css files in header of web template
 # web_include_css = "/assets/support_iid/css/support_iid.css"
@@ -94,7 +98,10 @@ fixtures = [
 	"Documents list",
 	"Qualification",
 	"Family Member Relationship",
-	{"dt": "Role", "filters": [["name", "in", ["Support IID Approver", "Reviewer", "Requester"]]]},
+	{
+		"dt": "Role",
+		"filters": [["name", "in", ["Support IID Approver", "Support IID Reviewer", "Support IID Requester"]]],
+	},
 ]
 
 # Installation

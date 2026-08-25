@@ -1,7 +1,7 @@
 {
  "app": "support_iid",
  "charts": [],
- "content": "[{\"id\": \"cm-header\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Case Management</b></span>\", \"col\": 12}}, {\"id\": \"cm-shortcuts\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"sc-dashboard\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Support IID Dashboard\", \"col\": 3}}, {\"id\": \"sc-registry\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Case Registry\", \"col\": 3}}]",
+ "content": "[{\"id\": \"cm-header\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Case Management</b></span>\", \"col\": 12}}, {\"id\": \"cm-shortcuts\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"sc-dashboard\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Support IID Dashboard\", \"col\": 3}}, {\"id\": \"sc-registry\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Case Registry\", \"col\": 3}}, {\"id\": \"sc-directory\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Company Directory\", \"col\": 3}}]",
  "creation": "2026-07-30 16:00:00",
  "custom_blocks": [],
  "docstatus": 0,
@@ -34,9 +34,20 @@
    "link_type": "Page",
    "onboard": 0,
    "type": "Link"
+  },
+  {
+   "dependencies": "",
+   "hidden": 0,
+   "is_query_report": 0,
+   "label": "Company Directory",
+   "link_count": 0,
+   "link_to": "company-directory",
+   "link_type": "Page",
+   "onboard": 0,
+   "type": "Link"
   }
  ],
- "modified": "2026-08-19 15:15:51.435733",
+ "modified": "2026-08-24 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Management",
@@ -61,6 +72,14 @@
    "doc_view": "",
    "label": "Case Registry",
    "link_to": "case-registry",
+   "stats_filter": "[]",
+   "type": "Page"
+  },
+  {
+   "color": "Grey",
+   "doc_view": "",
+   "label": "Company Directory",
+   "link_to": "company-directory",
    "stats_filter": "[]",
    "type": "Page"
   }
