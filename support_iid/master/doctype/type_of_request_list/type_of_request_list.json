@@ -1,6 +1,7 @@
 {
  "actions": [],
  "allow_bulk_edit": 1,
+ "allow_import": 1,
  "allow_rename": 1,
  "autoname": "prompt",
  "creation": "2026-07-18 10:38:04.538617",
@@ -18,7 +19,11 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
+<<<<<<< HEAD
  "modified": "2026-08-24 00:00:00.000000",
+=======
+ "modified": "2026-08-24 17:53:20.923781",
+>>>>>>> 8b521eb9e75534f49f8851cd73028c10882ced82
  "modified_by": "Administrator",
  "module": "Master",
  "name": "Type of Request List",
@@ -71,5 +76,6 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 1
+ "track_changes": 1,
+ "track_seen": 1
 }

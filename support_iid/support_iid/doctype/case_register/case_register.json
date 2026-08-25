@@ -540,7 +540,11 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
+<<<<<<< HEAD
  "modified": "2026-08-24 00:00:00.000000",
+=======
+ "modified": "2026-08-24 17:54:50.898186",
+>>>>>>> 8b521eb9e75534f49f8851cd73028c10882ced82
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Register",
@@ -632,5 +636,6 @@
  "sort_field": "creation",
  "sort_order": "DESC",
  "states": [],
- "track_changes": 1
+ "track_changes": 1,
+ "track_seen": 1
 }
