@@ -231,7 +231,7 @@
   },
   {
    "fieldname": "pincode",
-   "fieldtype": "Int",
+   "fieldtype": "Data",
    "label": "Pincode",
    "reqd": 1
   },

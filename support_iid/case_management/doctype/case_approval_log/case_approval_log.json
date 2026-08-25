@@ -39,7 +39,7 @@
    "fieldtype": "Select",
    "in_list_view": 1,
    "label": "Action",
-   "options": "\nAwaiting For Approval\nApprove\nDecline\nSend Back\nWithdrawn\nReviewer Approve\nReviewer Decline"
+   "options": "\nAwaiting For Approval\nApprove\nDecline\nSend Back\nWithdrawn\nReviewer Approve\nReviewer Send Back"
   },
   {
    "fieldname": "comments",
@@ -64,7 +64,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-14 00:00:00.000000",
+ "modified": "2026-08-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Approval Log",

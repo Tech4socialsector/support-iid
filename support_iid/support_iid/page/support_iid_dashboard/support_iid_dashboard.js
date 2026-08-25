@@ -26,6 +26,78 @@ function case_amount(c) {
 	return c.approved_amount || c.funds_requested || 0;
 }
 
+// Drill-down table column presets — which columns render depends on which
+// metric card opened the drill-down, not a single fixed set for every case
+// (e.g. Approved Amount/Approved By are always blank for a Declined-cases
+// drill-down, since a declined case never had either; a financial card's
+// drill-down should put the money columns first, not status). Each entry:
+// {field, label, sort} (sort false for the leading "#" column, which never
+// sorts). render_drilldown_row below reads `field` directly off the case
+// row except for the special-cased 'approved_amount' (uses display_amount)
+// and 'status' (uses display_status) fields.
+const DRILLDOWN_COLUMNS = {
+	// Every field the table can show, in its original default order — used
+	// whenever a card's own subject doesn't call for a narrower/reordered
+	// set (e.g. "All cases", "Cases in progress").
+	default: [
+		{ field: 'name', label: 'Case ID', sort: true },
+		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
+		{ field: 'type_of_request', label: 'Type', sort: true },
+		{ field: 'case_status', label: 'Status', sort: true },
+		{ field: 'funds_requested', label: 'Requested Amount', sort: true, align: 'right' },
+		{ field: 'approved_amount', label: 'Approved Amount', sort: true, align: 'right' },
+		{ field: 'approved_by', label: 'Approved By', sort: true },
+		{ field: 'request_date', label: 'Request Date', sort: true }
+	],
+	// Financial cards (Total Requested/Pending/Approved/Declined Amount) —
+	// the money columns lead, Approved By follows since it's directly
+	// tied to the Approved Amount figure right next to it.
+	financial: [
+		{ field: 'name', label: 'Case ID', sort: true },
+		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
+		{ field: 'funds_requested', label: 'Requested Amount', sort: true, align: 'right' },
+		{ field: 'approved_amount', label: 'Approved Amount', sort: true, align: 'right' },
+		{ field: 'approved_by', label: 'Approved By', sort: true },
+		{ field: 'case_status', label: 'Status', sort: true },
+		{ field: 'request_date', label: 'Request Date', sort: true }
+	],
+	// Status cards whose status can never carry an approved amount/approver
+	// (Pending Approval, Sent Back, On Hold, Withdrawn, Declined, Draft,
+	// "Other") — dropping both columns instead of showing them as a wall
+	// of "—" placeholders on every row.
+	status_no_approval: [
+		{ field: 'name', label: 'Case ID', sort: true },
+		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
+		{ field: 'type_of_request', label: 'Type', sort: true },
+		{ field: 'case_status', label: 'Status', sort: true },
+		{ field: 'funds_requested', label: 'Requested Amount', sort: true, align: 'right' },
+		{ field: 'request_date', label: 'Request Date', sort: true }
+	],
+	// Approved/Closed cases specifically — Approved Amount and Approved By
+	// both have real values here, so they lead right after the requested
+	// amount instead of trailing behind Type/Status (which are redundant
+	// once every row in the list is already "Approved").
+	approved: [
+		{ field: 'name', label: 'Case ID', sort: true },
+		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
+		{ field: 'funds_requested', label: 'Requested Amount', sort: true, align: 'right' },
+		{ field: 'approved_amount', label: 'Approved Amount', sort: true, align: 'right' },
+		{ field: 'approved_by', label: 'Approved By', sort: true },
+		{ field: 'request_date', label: 'Request Date', sort: true }
+	],
+	// Time/period drill-downs (Analysis chart bars, monthly breakdowns) —
+	// Request Date is the whole reason this list exists, so it leads right
+	// after the identifying columns instead of trailing at the end.
+	period: [
+		{ field: 'name', label: 'Case ID', sort: true },
+		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
+		{ field: 'request_date', label: 'Request Date', sort: true },
+		{ field: 'case_status', label: 'Status', sort: true },
+		{ field: 'funds_requested', label: 'Requested Amount', sort: true, align: 'right' },
+		{ field: 'approved_amount', label: 'Approved Amount', sort: true, align: 'right' }
+	]
+};
+
 const STATUS_COLOR = {
 	'Draft': 'gray', 'Submitted': 'blue', 'Rejected': 'red',
 	'Sent Back': 'orange', 'On Hold': 'orange', 'Closed': 'gray',
@@ -733,22 +805,22 @@ class SupportIIDDashboard {
 			{
 				icon: icon('barChart', 18), label: 'Total Requested Amount', value: format_currency(total_requested_value),
 				sub: rows.length + ' total case(s)',
-				click: () => self.open_drilldown('All cases', () => true)
+				click: () => self.open_drilldown('All cases', () => true, 'financial')
 			},
 			{
 				icon: icon('clock', 18), label: 'Pending for Approval Amount', value: format_currency(total_pending_value),
 				sub: pending_rows.length + ' pending case(s)',
-				click: () => self.open_drilldown('Pending approval cases', (c) => c.case_status === 'Pending Approval')
+				click: () => self.open_drilldown('Pending approval cases', (c) => c.case_status === 'Pending Approval', 'status_no_approval')
 			},
 			{
 				icon: '₹', label: 'Total Approved Amount', value: format_currency(total_approved_value),
 				sub: approved_rows.length + ' approved/closed case(s)',
-				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved' || c.case_status === 'Closed')
+				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved' || c.case_status === 'Closed', 'approved')
 			},
 			{
 				icon: icon('xCircle', 18), label: 'Total Declined Amount', value: format_currency(total_declined_value),
 				sub: declined_rows.length + ' declined case(s)',
-				click: () => self.open_drilldown('Declined cases', (c) => c.case_status === 'Rejected')
+				click: () => self.open_drilldown('Declined cases', (c) => c.case_status === 'Rejected', 'status_no_approval')
 			}
 		];
 
@@ -772,27 +844,28 @@ class SupportIIDDashboard {
 			{
 				icon: icon('list', 18), label: 'Total Cases', value: rows.length,
 				sub: 'across all statuses',
-				click: () => self.open_drilldown('All cases', () => true)
+				click: () => self.open_drilldown('All cases', () => true, 'default')
 			},
 			{
 				icon: icon('clock', 18), label: 'Cases In Progress', value: in_progress_rows.length,
 				sub: 'awaiting review, approval, or action',
-				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status))
+				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status), 'status_no_approval')
 			}
 		].concat(displayed_statuses.map((s) => {
 			var matches_status = s === 'Approved'
 				? (c) => c.case_status === 'Approved' || c.case_status === 'Closed'
 				: (c) => c.case_status === s;
 			var status_rows = rows.filter(matches_status);
+			var preset = s === 'Approved' ? 'approved' : 'status_no_approval';
 			return {
 				icon: icon('tag', 18), label: status_display_label(s), value: status_rows.length,
 				sub: status_rows.length + ' case(s)',
-				click: () => self.open_drilldown(status_display_label(s) + ' cases', matches_status)
+				click: () => self.open_drilldown(status_display_label(s) + ' cases', matches_status, preset)
 			};
 		})).concat(other_rows.length ? [{
 			icon: icon('tag', 18), label: 'Others', value: other_rows.length,
 			sub: other_rows.length + ' case(s)',
-			click: () => self.open_drilldown('Other cases', (c) => status_list.indexOf(c.case_status) === -1)
+			click: () => self.open_drilldown('Other cases', (c) => status_list.indexOf(c.case_status) === -1, 'status_no_approval')
 		}] : []);
 
 		this.render_metric_group('#sd-metrics-financial', financial_cards);
@@ -899,7 +972,7 @@ class SupportIIDDashboard {
 		this.wrapper.find('#sd-trend-chart').html(svg);
 		this.wrapper.find('#sd-trend-chart svg circle').on('click', function () {
 			var period = $(this).data('period');
-			if (period) self.open_drilldown('Period · ' + period_label(period, g), (c) => period_key(c.request_date, g) === period);
+			if (period) self.open_drilldown('Period · ' + period_label(period, g), (c) => period_key(c.request_date, g) === period, 'period');
 		});
 	}
 
@@ -971,7 +1044,8 @@ class SupportIIDDashboard {
 			self.open_drilldown(month_names[month - 1] + ' ' + year + ' · Approved cases', (c) =>
 				c.case_status === 'Approved' &&
 				c.request_date && c.request_date.slice(0, 4) === String(year) &&
-				parseInt(c.request_date.slice(5, 7), 10) === month
+				parseInt(c.request_date.slice(5, 7), 10) === month,
+				'approved'
 			);
 		});
 
@@ -1021,17 +1095,19 @@ class SupportIIDDashboard {
 		this.wrapper.find('#sd-trend-chart-2 .sd-trend-col').on('click', function () {
 			var period = $(this).data('period');
 			self.open_drilldown('Period · ' + period_label(period, g), (c) =>
-				period_key(c.request_date, g) === period && (c.case_status === 'Approved' || c.case_status === 'Rejected'));
+				period_key(c.request_date, g) === period && (c.case_status === 'Approved' || c.case_status === 'Rejected'),
+				'period');
 		});
 	}
 
 	// ---------------- Drill-down popup (list <-> detail, in the SAME modal) ----------------
 
-	open_drilldown(title, filterFn) {
+	open_drilldown(title, filterFn, column_preset) {
 		$('.sd-modal-backdrop').remove();
 
 		var self = this;
 		var matching = this.rows.filter(filterFn);
+		var columns = DRILLDOWN_COLUMNS[column_preset] || DRILLDOWN_COLUMNS.default;
 		var state = { search: '', sort_field: 'request_date', sort_order: 'desc', page: 0 };
 		var PAGE_SIZE = 15;
 		var current_detail_doc = null;
@@ -1042,6 +1118,22 @@ class SupportIIDDashboard {
 		function amount_text(c) {
 			var a = display_amount(c);
 			return a ? format_currency(a) : '—';
+		}
+		// Renders one <td> for a given column config against one case row —
+		// the two fields with dedicated display logic elsewhere in this
+		// modal (status's friendlier label, approved_amount's Approved-
+		// only fallback) are special-cased; everything else is a plain
+		// field read straight off the row.
+		function render_cell(col, c) {
+			var cls = col.align === 'right' ? ' class="sd-amount"' : '';
+			var text;
+			if (col.field === 'case_status') text = display_status(c);
+			else if (col.field === 'funds_requested') text = format_currency(c.funds_requested || 0);
+			else if (col.field === 'approved_amount') text = amount_text(c);
+			else if (col.field === 'approved_by') text = c.approved_by || '—';
+			else if (col.field === 'request_date') return `<td${cls}>${c.request_date ? frappe.datetime.str_to_user(c.request_date) : ''}</td>`;
+			else text = c[col.field] || '';
+			return `<td${cls}>${frappe.utils.escape_html(text)}</td>`;
 		}
 
 		function get_visible_rows() {
@@ -1072,18 +1164,11 @@ class SupportIIDDashboard {
 			var rows_html = page_rows.map((c, i) => `
 				<tr data-name="${frappe.utils.escape_html(c.name)}">
 					<td class="sd-row-num">${state.page * PAGE_SIZE + i + 1}</td>
-					<td>${frappe.utils.escape_html(c.name)}</td>
-					<td>${frappe.utils.escape_html(c.beneficiary_name || '')}</td>
-					<td>${frappe.utils.escape_html(c.type_of_request || '')}</td>
-					<td>${frappe.utils.escape_html(display_status(c))}</td>
-					<td class="sd-amount">${format_currency(c.funds_requested || 0)}</td>
-					<td class="sd-amount">${amount_text(c)}</td>
-					<td>${frappe.utils.escape_html(c.approved_by || '—')}</td>
-					<td>${c.request_date ? frappe.datetime.str_to_user(c.request_date) : ''}</td>
+					${columns.map((col) => render_cell(col, c)).join('')}
 				</tr>
 			`).join('');
 
-			modal.find('#sd-drilldown-body').html(rows_html || '<tr><td colspan="9" class="sd-empty-note">No matching cases.</td></tr>');
+			modal.find('#sd-drilldown-body').html(rows_html || `<tr><td colspan="${columns.length + 1}" class="sd-empty-note">No matching cases.</td></tr>`);
 			modal.find('#sd-drilldown-table thead th').removeClass('sd-sort-active');
 			modal.find('#sd-drilldown-table thead th[data-field="' + state.sort_field + '"]').addClass('sd-sort-active');
 
@@ -1175,14 +1260,7 @@ class SupportIIDDashboard {
 										<thead>
 											<tr>
 												<th class="sd-no-sort">#</th>
-												<th data-field="name">Case ID<span class="sd-sort-arrow">&#8645;</span></th>
-												<th data-field="beneficiary_name">Beneficiary<span class="sd-sort-arrow">&#8645;</span></th>
-												<th data-field="type_of_request">Type<span class="sd-sort-arrow">&#8645;</span></th>
-												<th data-field="case_status">Status<span class="sd-sort-arrow">&#8645;</span></th>
-												<th data-field="funds_requested" style="text-align:right">Requested Amount<span class="sd-sort-arrow">&#8645;</span></th>
-												<th data-field="approved_amount" style="text-align:right">Approved Amount<span class="sd-sort-arrow">&#8645;</span></th>
-												<th data-field="approved_by">Approved By<span class="sd-sort-arrow">&#8645;</span></th>
-												<th data-field="request_date">Request Date<span class="sd-sort-arrow">&#8645;</span></th>
+												${columns.map((col) => `<th data-field="${col.field}"${col.align === 'right' ? ' style="text-align:right"' : ''}>${col.label}<span class="sd-sort-arrow">&#8645;</span></th>`).join('')}
 											</tr>
 										</thead>
 										<tbody id="sd-drilldown-body"></tbody>

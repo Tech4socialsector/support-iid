@@ -631,7 +631,7 @@ frappe.ready(function () {
     frappe.web_form.on('pincode', function (field, value) {
         var pin = String(value || '').trim();
         if (!pin) return;
-        if (pin.length !== 6 || isNaN(pin)) {
+        if (!/^\d{6}$/.test(pin)) {
             fieldError('pincode', 'Please enter a valid 6-digit pincode.');
             frappe.web_form.set_value('state', '');
             frappe.web_form.set_value('district', '');
@@ -763,7 +763,17 @@ frappe.ready(function () {
                 decryptPayload(payload).then(function (data) {
                     hideLoader();
                     if (!data.exists) {
-                        fieldError('requestor_email', 'No employee record found for this email.');
+                        // transient_error means the directory lookup itself failed
+                        // (a connection reset/timeout talking to Microsoft Graph,
+                        // already retried once server-side — see get_employee_details)
+                        // — worth telling the requestor to retry, distinct from a
+                        // clean "this email isn't in the directory" result.
+                        fieldError(
+                            'requestor_email',
+                            data.transient_error
+                                ? 'Could not fetch your details right now. Please try re-entering your email, or fill the fields below manually.'
+                                : 'No employee record found for this email.'
+                        );
                         return;
                     }
                     var emp = data.employee;

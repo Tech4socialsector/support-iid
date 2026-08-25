@@ -1,6 +1,19 @@
 // Copyright (c) 2026, Tech For Social Sector and contributors
 // For license information, please see license.txt
 
+// Same in-browser Office-document renderer (docx/xlsx/xls/csv, vendored —
+// no file content ever leaves the browser) the Case Registry page and
+// Support IID Dashboard already load for their own document preview
+// modals — see case_register_open_document_preview below, and
+// office_preview.js's own header comment for exactly what it does and
+// doesn't support.
+if (!document.getElementById('siid-office-preview-script')) {
+	var siid_preview_script = document.createElement('script');
+	siid_preview_script.id = 'siid-office-preview-script';
+	siid_preview_script.src = '/assets/support_iid/js/office_preview.js';
+	document.head.appendChild(siid_preview_script);
+}
+
 // Same mandatory-document row styling support_iid_case_registration.js
 // (the guest web form) injects — a subtle left border + background tint,
 // not text in the Document Name cell (which wraps and breaks alignment).
@@ -283,7 +296,29 @@ frappe.ui.form.on("Case Register", {
 		// to be viewing/reassigning it in the Desk), so this must never
 		// overwrite real data on an already-submitted or already-saved doc.
 		if (!frm.is_new()) return;
-		if (frm.doc.requestor_email) return;
+
+		if (frm.doc.requestor_email) {
+			// requestor_email can already be set here even on a genuinely
+			// new, unsaved doc: Frappe restores an in-progress "New Case
+			// Register" doc from its local per-tab cache on a page refresh/
+			// reopen of the same new-case-register-... route, WITHOUT
+			// re-running this onload's own set_value below (that only fires
+			// once, the first time this route is freshly created) — so a
+			// refresh that happens before the Graph fetch below ever
+			// completed left requestor_email filled in from the cached doc
+			// while requestor_name/department/work_location stayed
+			// permanently blank, with nothing left to trigger the lookup
+			// again. If those auto-fill-only fields are all still empty,
+			// this is exactly that case (a real reassigned-to case would
+			// already have them from whoever originally filled the form),
+			// so retry the lookup; otherwise leave a doc that already has
+			// real data alone.
+			var already_has_autofill = frm.doc.requestor_name || frm.doc.department || frm.doc.work_location;
+			if (!already_has_autofill) {
+				fetch_requestor_details(frm, frm.doc.requestor_email);
+			}
+			return;
+		}
 		// frappe.session.user is the literal string "Administrator" or
 		// "Guest" for those accounts, not a real email — get_employee_details
 		// would just throw trying to look either up as an org email.
@@ -451,6 +486,7 @@ frappe.ui.form.on("Case Register", {
 		}
 
 		mark_mandatory_document_rows(frm);
+		setup_supporting_document_preview(frm);
 		force_private_attachments(frm);
 		apply_request_type_labels(frm, frm.doc.type_of_request);
 		apply_insurance_visibility(frm, frm.doc.insurance_type);
@@ -665,6 +701,197 @@ function mark_mandatory_document_rows(frm) {
 	});
 }
 
+// A supporting_documents row's attachment shows up as a plain download
+// link in TWO different places, each with its own markup — neither offers
+// any in-app preview on its own:
+//   - the collapsed grid table's own "Attachment" column, formatted by
+//     Frappe's generic format_attachment_url as a bare
+//     <a href target="_blank"> inside that column's .static-area (see
+//     frappe/public/js/frappe/form/formatters.js) — this is what's
+//     actually visible without opening a row, so it's the one place a
+//     preview button HAS to live to be discoverable at all;
+//   - a row's own expanded field view, once you click into it, which
+//     instead renders <a class="attached-file-link" target="_blank">
+//     (see frappe/public/js/frappe/form/controls/attach.js).
+// Both are intercepted here (delegated off the grid's own wrapper, which
+// is stable across every grid re-render — a plain per-row binding would
+// need re-attaching on every add/remove/sort) and open
+// case_register_open_document_preview instead, with the "open in a new
+// tab" behavior still one click away inside that preview's own footer.
+// The collapsed-column case also needs stopPropagation: that whole
+// column has its own click handler that expands the row into edit mode
+// (see grid_row.js), which would otherwise fire right alongside this.
+function setup_supporting_document_preview(frm) {
+	var grid = frm.fields_dict.supporting_documents && frm.fields_dict.supporting_documents.grid;
+	if (!grid || !grid.wrapper || grid.wrapper.data("siid-preview-bound")) return;
+	grid.wrapper.data("siid-preview-bound", true);
+
+	function open_preview_for_row($el) {
+		var url = $el.attr("href");
+		if (!url) return;
+		var $row_el = $el.closest(".grid-row");
+		var row_name = $row_el.attr("data-name");
+		var row = (frm.doc.supporting_documents || []).find(function (r) {
+			return r.name === row_name;
+		});
+		case_register_open_document_preview(url, (row && row.document_name) || "Document");
+	}
+
+	grid.wrapper.on("click", ".attached-file-link", function (e) {
+		e.preventDefault();
+		open_preview_for_row($(this));
+	});
+
+	grid.wrapper.on("click", '.grid-static-col[data-fieldname="attachment"] .static-area a', function (e) {
+		e.preventDefault();
+		e.stopPropagation();
+		open_preview_for_row($(this));
+	});
+}
+
+// Same file-type handling as case_registry.js's open_document_modal
+// (image/PDF/video/audio/text rendered natively; Office docs via the
+// vendored SIIDOfficePreview; anything else falls back to a download
+// link) — reimplemented here on this form's own custom-modal styling
+// (case_register_open_modal's visual language) instead of copying the
+// Case Registry page's .cl-modal CSS classes, which this file doesn't
+// define at all.
+function case_register_open_document_preview(url, name) {
+	var ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
+	var body;
+	var needs_office_render = false;
+
+	if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].indexOf(ext) > -1) {
+		body =
+			'<div style="text-align:center"><img src="' +
+			url +
+			'" style="max-width:100%;max-height:65vh;border-radius:8px;background:#fff"></div>';
+	} else if (ext === "pdf") {
+		body =
+			'<iframe src="' +
+			url +
+			'" style="width:100%;height:65vh;border:none;border-radius:8px;background:#fff"></iframe>';
+	} else if (["mp4", "webm", "ogg", "mov"].indexOf(ext) > -1) {
+		body = '<video src="' + url + '" controls style="width:100%;max-height:65vh;border-radius:8px"></video>';
+	} else if (["mp3", "wav"].indexOf(ext) > -1) {
+		body = '<div style="padding:30px 10px"><audio src="' + url + '" controls style="width:100%"></audio></div>';
+	} else if (["txt", "json", "log"].indexOf(ext) > -1) {
+		body =
+			'<iframe src="' +
+			url +
+			'" style="width:100%;height:65vh;border:none;border-radius:8px;background:#fff"></iframe>';
+	} else if (window.SIIDOfficePreview && window.SIIDOfficePreview.isSupported(ext)) {
+		needs_office_render = true;
+		body =
+			'<div class="text-center text-muted" style="padding:50px 20px" id="cr-doc-convert-status">' +
+			'<div style="font-size:14px">' +
+			__("Preparing preview…") +
+			"</div></div>";
+	} else if (window.SIIDOfficePreview && window.SIIDOfficePreview.isUnsupportedOffice(ext)) {
+		body =
+			'<div class="text-center text-muted" style="padding:50px 20px">' +
+			'<div style="font-size:14px;margin-bottom:14px">' +
+			__("In-browser preview isn't available for .{0} files. Please download to view.", [
+				frappe.utils.escape_html(ext),
+			]) +
+			"</div>" +
+			'<a href="' +
+			url +
+			'" target="_blank" class="cr-modal-btn-primary" style="display:inline-block;padding:8px 18px;' +
+			'font-size:13px;font-weight:600;border:none;background:#2490ef;color:#fff;border-radius:8px;' +
+			'text-decoration:none;">' +
+			__("Open / Download") +
+			"</a></div>";
+	} else {
+		body =
+			'<div class="text-center text-muted" style="padding:50px 20px">' +
+			'<div style="font-size:14px;margin-bottom:14px">' +
+			__("Preview isn't available for this file type{0}.", [ext ? " (." + frappe.utils.escape_html(ext) + ")" : ""]) +
+			"</div>" +
+			'<a href="' +
+			url +
+			'" target="_blank" class="cr-modal-btn-primary" style="display:inline-block;padding:8px 18px;' +
+			'font-size:13px;font-weight:600;border:none;background:#2490ef;color:#fff;border-radius:8px;' +
+			'text-decoration:none;">' +
+			__("Open / Download") +
+			"</a></div>";
+	}
+
+	// Not built via case_register_open_modal — that helper is tuned for
+	// narrow form-field dialogs (Approve/Send Back/Withdraw, ~520px),
+	// while a document preview needs a wide, near-full-height body for
+	// an iframe/image/video to actually be usable. Same overlay/card
+	// visual language (blurred backdrop, rounded white card, Escape and
+	// backdrop-click to close) as that helper, just sized differently.
+	var overlay = document.createElement("div");
+	overlay.style.cssText =
+		"position:fixed;inset:0;z-index:100000;background:rgba(20,26,32,.45);" +
+		"backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;" +
+		"padding:20px;animation:caseRegisterFadeIn .15s ease-out;";
+	overlay.innerHTML =
+		'<div style="background:#fff;border-radius:16px;width:100%;max-width:920px;' +
+		'max-height:90vh;display:flex;flex-direction:column;' +
+		'box-shadow:0 16px 48px rgba(20,26,32,.24);animation:caseRegisterModalIn .18s cubic-bezier(.2,.8,.3,1);' +
+		'overflow:hidden;">' +
+		'<div style="padding:18px 22px;display:flex;align-items:center;justify-content:space-between;' +
+		'border-bottom:1px solid #eceef0;flex-shrink:0;">' +
+		'<div style="font-size:15px;font-weight:600;color:#1a2229;overflow:hidden;text-overflow:ellipsis;' +
+		'white-space:nowrap;padding-right:12px;">' +
+		frappe.utils.escape_html(name || __("Document")) +
+		"</div>" +
+		'<button class="cr-doc-preview-close" style="background:none;border:none;font-size:19px;color:#9aa4ad;' +
+		'cursor:pointer;line-height:1;padding:5px;border-radius:7px;flex-shrink:0;">✕</button>' +
+		"</div>" +
+		'<div style="padding:20px 22px;overflow:auto;flex:1;">' +
+		body +
+		"</div>" +
+		'<div style="padding:14px 22px;border-top:1px solid #eceef0;display:flex;justify-content:flex-end;' +
+		'gap:10px;flex-shrink:0;">' +
+		'<a href="' +
+		url +
+		'" target="_blank" style="padding:8px 16px;font-size:13px;font-weight:500;border:1.5px solid #dde3e8;' +
+		'background:#fff;color:#4a5560;border-radius:8px;text-decoration:none;">' +
+		__("Open in New Tab") +
+		"</a>" +
+		"</div>" +
+		"</div>";
+
+	document.body.appendChild(overlay);
+
+	function close_preview() {
+		overlay.remove();
+		document.removeEventListener("keydown", on_preview_key);
+	}
+	function on_preview_key(e) {
+		if (e.key === "Escape") close_preview();
+	}
+	document.addEventListener("keydown", on_preview_key);
+	overlay.addEventListener("mousedown", function (e) {
+		if (e.target === overlay) close_preview();
+	});
+	overlay.querySelector(".cr-doc-preview-close").addEventListener("click", close_preview);
+
+	if (needs_office_render) {
+		// Scoped to THIS overlay's own DOM (not a global id lookup) so a
+		// second preview opened before this one closes can never target
+		// the wrong status placeholder.
+		var $status = $(overlay).find("#cr-doc-convert-status");
+		window.SIIDOfficePreview.render($status.parent(), url, ext).catch(function (err) {
+			$status.html(
+				'<div style="font-size:14px;margin-bottom:14px">' +
+					frappe.utils.escape_html((err && err.message) || __("Could not render a preview for this file.")) +
+					"</div>" +
+					'<a href="' +
+					url +
+					'" target="_blank" style="display:inline-block;padding:8px 16px;font-size:13px;font-weight:500;' +
+					'border:1.5px solid #dde3e8;background:#fff;color:#4a5560;border-radius:8px;text-decoration:none;">' +
+					__("Open / Download") +
+					"</a>"
+			);
+		});
+	}
+}
+
 // Uploaded supporting documents can carry sensitive personal/medical
 // information — every one of them should always be private, with no
 // "make public" affordance offered to whoever's attaching it. The
@@ -737,6 +964,7 @@ function force_private_attachments(frm) {
 const _CASE_REGISTER_EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const _CASE_REGISTER_MOBILE_RE = /^(\+91[\-\s]?)?[6-9]\d{9}$/;
 const _CASE_REGISTER_CURRENCY_RE = /^\d*\.?\d*$/;
+const _CASE_REGISTER_PINCODE_RE = /^\d{6}$/;
 const _CASE_REGISTER_OFFICIAL_DOMAIN = "azimpremjifoundation.org";
 // Letters, spaces, and the usual name punctuation — no digits. Mirrors
 // _NAME_RE in case_register.py.
@@ -863,7 +1091,7 @@ function case_register_validate_name(frm, fieldname) {
 
 function case_register_validate_pincode(frm) {
 	var pin = String(frm.doc.pincode || "").trim();
-	if (!pin || (pin.length === 6 && !isNaN(pin))) {
+	if (!pin || _CASE_REGISTER_PINCODE_RE.test(pin)) {
 		case_register_clear_field_error(frm, "pincode");
 		return true;
 	}
@@ -927,16 +1155,38 @@ function apply_requester_post_submit_view(frm) {
 }
 
 function resubmit_case_dialog(frm) {
-	case_register_branded_confirm(
-		__("Resubmit this case to the approver? Save any edits first if you haven't already."),
-		__("I confirm the details on this case are correct and ready to resubmit."),
-		function () {
+	// A comment explaining what changed since Send Back — required, since
+	// the approver re-reviewing this case has no other way to know what
+	// was actually fixed without re-diffing every field themselves. Goes
+	// out in the re-approval email's "Previous stage" line (see
+	// resubmit_case_from_desk -> _resubmit_after_send_back ->
+	// _send_approval_request_email's previous_comments).
+	case_register_open_modal({
+		title: __("Resubmit Case"),
+		message: __("Resubmit this case to the approver? Save any edits first if you haven't already."),
+		fields: [
+			{
+				fieldname: "comments",
+				type: "text",
+				label: __("What did you change? (sent to the approver)"),
+				reqd: 1,
+			},
+			{
+				fieldname: "declaration",
+				type: "check",
+				label: __("I confirm the details on this case are correct and ready to resubmit."),
+				reqd: 1,
+			},
+		],
+		primary_label: __("Resubmit"),
+		on_submit: function (values, close) {
 			var do_resubmit = function () {
 				case_register_call_with_loader({
 					method: "support_iid.support_iid.doctype.case_register.case_register.resubmit_case_from_desk",
-					args: { case_name: frm.doc.name },
+					args: { case_name: frm.doc.name, comments: values.comments },
 					freeze_message: __("Resubmitting..."),
 					callback: function () {
+						close();
 						frm.reload_doc();
 					},
 				});
@@ -946,8 +1196,8 @@ function resubmit_case_dialog(frm) {
 			} else {
 				do_resubmit();
 			}
-		}
-	);
+		},
+	});
 }
 
 // An Approver (Support IID Approver, and no broader role) never edits a
@@ -995,6 +1245,39 @@ function withdraw_case_from_desk_dialog(frm) {
 	});
 }
 
+// frappe.session.user / frappe.user_roles are populated once at page
+// load and then live in memory for as long as the tab stays open — a
+// browser tab left open on a case form does NOT pick up a subsequent
+// login/logout that happens in another tab (or in the same tab via
+// back/forward-cache navigation) sharing the same browser session.
+// That leaves a window where the visible "current user" the button
+// logic reasons about is stale relative to the session cookie actually
+// sent on the next request — harmless for the server-side check in
+// process_case_approval (which reads the live session and correctly
+// rejects), but confusing: a button appears, the user fills in the
+// dialog, and only then gets "You are not the designated approver for
+// the current stage." This re-checks the logged-in user against the
+// server immediately before either showing the action button or
+// opening its dialog, so a stale tab corrects itself (a fresh
+// frm.reload_doc() re-runs every refresh handler, redrawing the button
+// or hiding it under the now-current identity) instead of dead-ending
+// the user in a dialog that was never going to succeed.
+function case_register_resync_if_session_stale(frm, then) {
+	frappe.call({
+		method: "frappe.auth.get_logged_user",
+		callback: function (r) {
+			var live_user = r.message;
+			if (live_user && live_user !== frappe.session.user) {
+				frappe.session.user = live_user;
+				frappe.boot.user.name = live_user;
+				frm.reload_doc();
+				return;
+			}
+			then();
+		},
+	});
+}
+
 // Shows a "Take Action" primary button — Approve / Send Back / Decline,
 // with an optional comment — for whoever's actually allowed to act on
 // the case's CURRENT pending approval stage: the exact approver_email
@@ -1035,7 +1318,9 @@ function apply_approver_action_button(frm) {
 		(approver_email && user.toLowerCase() === approver_email);
 	if (!can_act) return;
 
-	frm.page.set_primary_action(__("Take Action"), () => take_action_dialog(frm, current_stage));
+	frm.page.set_primary_action(__("Take Action"), () =>
+		case_register_resync_if_session_stale(frm, () => take_action_dialog(frm, current_stage))
+	);
 }
 
 function take_action_dialog(frm, current_stage) {
@@ -1089,36 +1374,45 @@ function apply_reviewer_final_approval_button(frm) {
 		roles.includes("Support IID Reviewer");
 	if (!can_act) return;
 
-	frm.page.set_primary_action(__("Final Verification"), () => reviewer_final_approval_dialog(frm));
+	frm.page.set_primary_action(__("Final Verification"), () =>
+		case_register_resync_if_session_stale(frm, () => reviewer_final_approval_dialog(frm))
+	);
 }
 
 function reviewer_final_approval_dialog(frm) {
-	case_register_open_modal({
+	// Same frappe.ui.Dialog pattern as take_action_dialog (an ordinary
+	// approval stage) — Approve / Send Back only, no Decline: unlike an
+	// ordinary stage, the Reviewer's final verification is a check on a
+	// case every level has already approved, so an outright rejection at
+	// this point isn't offered here — Send Back covers "something's not
+	// right, fix and resubmit" the same way it does for any other stage.
+	var dialog = new frappe.ui.Dialog({
 		title: __("Final Verification"),
 		fields: [
 			{
 				fieldname: "action",
-				type: "select",
+				fieldtype: "Select",
 				label: __("Action"),
-				options: ["Approve", "Decline"],
+				options: ["Approve", "Send Back"],
 				default: "Approve",
 				reqd: 1,
 			},
-			{ fieldname: "comments", type: "text", label: __("Comments") },
+			{ fieldname: "comments", fieldtype: "Small Text", label: __("Comments") },
 		],
-		primary_label: __("Submit"),
-		on_submit: function (values, close) {
+		primary_action_label: __("Submit"),
+		primary_action: function (values) {
 			case_register_call_with_loader({
 				method: "support_iid.support_iid.doctype.case_register.case_register.reviewer_final_approval",
 				args: { case_name: frm.doc.name, action: values.action, comments: values.comments },
 				freeze_message: __("Processing..."),
 				callback: function () {
-					close();
+					dialog.hide();
 					frm.reload_doc();
 				},
 			});
 		},
 	});
+	dialog.show();
 }
 
 function submit_draft_case(frm) {
@@ -1138,7 +1432,10 @@ function submit_draft_case(frm) {
 					args: { case_name: frm.doc.name },
 					freeze_message: __("Submitting..."),
 					callback: function () {
-						frm.reload_doc();
+						var case_name = frm.doc.name;
+						frm.reload_doc().then(function () {
+							case_register_show_submission_success(case_name);
+						});
 					},
 				});
 			};
@@ -1149,6 +1446,65 @@ function submit_draft_case(frm) {
 			}
 		}
 	);
+}
+
+// Shown once, right after a Draft case is actually submitted — the form
+// underneath is already reloaded (locked read-only, Pending Approval —
+// see apply_requester_post_submit_view) by the time this appears, so
+// dismissing it just reveals that same locked record. The point isn't
+// to gate anything (submit_case's own "only a Draft case can be
+// submitted" check already makes a real double-submit impossible) —
+// it's to give the requestor an unmistakable "you're done, here's your
+// case ID" moment instead of the form just quietly re-rendering, so
+// they don't go open a fresh New Case Register for the same request
+// thinking the first attempt didn't go through.
+function case_register_show_submission_success(case_name) {
+	var overlay = document.createElement("div");
+	overlay.style.cssText =
+		"position:fixed;inset:0;z-index:100000;background:rgba(20,26,32,.45);" +
+		"backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;" +
+		"padding:20px;animation:caseRegisterFadeIn .15s ease-out;";
+
+	overlay.innerHTML =
+		'<div style="background:#fff;border-radius:16px;width:100%;max-width:460px;text-align:center;' +
+		'box-shadow:0 16px 48px rgba(20,26,32,.24);animation:caseRegisterModalIn .18s cubic-bezier(.2,.8,.3,1);' +
+		'overflow:hidden;padding:36px 32px 30px;">' +
+		'<div style="width:56px;height:56px;border-radius:50%;background:#e6f4ea;color:#1e8e3e;' +
+		'display:flex;align-items:center;justify-content:center;margin:0 auto 18px;font-size:28px;">✓</div>' +
+		'<div style="font-size:19px;font-weight:600;color:#1a2229;margin-bottom:8px;">' +
+		__("Case submitted") +
+		"</div>" +
+		'<div style="font-size:14.5px;color:#5c6773;line-height:1.55;margin-bottom:4px;">' +
+		__("Your request has been recorded as") +
+		"</div>" +
+		'<div style="font-size:16px;font-weight:600;color:#2490ef;margin-bottom:16px;">' +
+		frappe.utils.escape_html(case_name) +
+		"</div>" +
+		'<div style="font-size:14px;color:#5c6773;line-height:1.55;margin-bottom:26px;">' +
+		__(
+			"It's now with the first-level approver. You'll get an email update as it moves through review — no need to submit this again."
+		) +
+		"</div>" +
+		'<button class="cr-submit-success-done" style="width:100%;padding:11px 0;font-size:14.5px;font-weight:600;' +
+		"border:none;background:#2490ef;color:#fff;border-radius:9px;cursor:pointer;\">" +
+		__("Done") +
+		"</button>" +
+		"</div>";
+
+	document.body.appendChild(overlay);
+
+	function close() {
+		overlay.remove();
+		document.removeEventListener("keydown", on_key);
+	}
+	function on_key(e) {
+		if (e.key === "Escape") close();
+	}
+	document.addEventListener("keydown", on_key);
+	overlay.addEventListener("mousedown", function (e) {
+		if (e.target === overlay) close();
+	});
+	overlay.querySelector(".cr-submit-success-done").addEventListener("click", close);
 }
 
 // Same AES-GCM key/scheme as the guest web form's decryptPayload (see
@@ -1226,7 +1582,28 @@ function fetch_requestor_details(frm, email) {
 			if (!payload || !payload.encrypted) return;
 			case_register_decrypt_payload(payload)
 				.then(function (data) {
-					if (!data.exists) return;
+					if (!data.exists) {
+						// transient_error (a connection reset/timeout talking to
+						// Microsoft Graph, retried once server-side and still failed
+						// — see _graph_get/get_employee_details) is worth telling the
+						// requestor about, since the fields below just silently
+						// staying blank otherwise looks like nothing happened at
+						// all. A clean "email not found" isn't an error — that's an
+						// expected outcome for an email outside the directory — so
+						// it stays quiet like before.
+						if (data.transient_error) {
+							frappe.show_alert(
+								{
+									message: __(
+										"Could not fetch your details from the directory right now. Please fill the fields below manually, or retry by re-entering your email."
+									),
+									indicator: "orange",
+								},
+								7
+							);
+						}
+						return;
+					}
 					var emp = data.employee;
 
 					if (emp.name) frm.set_value("requestor_name", emp.name);

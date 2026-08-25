@@ -388,8 +388,8 @@ def get_manager_chain(email: str, headers: dict, max_depth: int = 3) -> list:
 	seen = set()
 
 	for _ in range(max_depth):
-		resp = requests.get(f"{GRAPH_URL}/users/{current}/manager", headers=headers)
-		if resp.status_code != 200:
+		resp = _graph_get(f"{GRAPH_URL}/users/{current}/manager", headers)
+		if resp is None or resp.status_code != 200:
 			break
 		m = resp.json()
 		m_email = m.get("mail") or m.get("userPrincipalName")
@@ -455,7 +455,16 @@ def get_employee_details(email, funds_requested=None):
 		]
 	)
 
-	response = requests.get(f"{GRAPH_URL}/users/{email}", headers=headers, params={"$select": fields})
+	response = _graph_get(f"{GRAPH_URL}/users/{email}", headers, {"$select": fields})
+
+	if response is None:
+		# Both attempts in _graph_get failed (a connection reset/timeout
+		# talking to Graph, already logged there) — distinct from a clean
+		# 404/error response below, so the caller can tell "try again" apart
+		# from "this email genuinely isn't in the directory."
+		return encrypt_payload(
+			{"exists": False, "transient_error": True, "message": "Could not reach the directory service. Please try again."}
+		)
 
 	if response.status_code == 404:
 		return encrypt_payload({"exists": False, "message": "Email not found."})

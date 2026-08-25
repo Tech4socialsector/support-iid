@@ -1,7 +1,7 @@
 {
  "app": "support_iid",
  "charts": [],
- "content": "[{\"id\": \"cm-header\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Case Management</b></span>\", \"col\": 12}}, {\"id\": \"cm-shortcuts\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"sc-dashboard\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Support IID Dashboard\", \"col\": 3}}, {\"id\": \"sc-registry\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Case Register\", \"col\": 3}}, {\"id\": \"sc-directory\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Company Directory\", \"col\": 3}}]",
+ "content": "[{\"id\": \"cm-header\", \"type\": \"header\", \"data\": {\"text\": \"<span class=\\\"h4\\\"><b>Support IID</b></span>\", \"col\": 12}}, {\"id\": \"cm-shortcuts\", \"type\": \"spacer\", \"data\": {\"col\": 12}}, {\"id\": \"sc-dashboard\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Support IID Dashboard\", \"col\": 3}}, {\"id\": \"sc-registry\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Case Register\", \"col\": 3}}, {\"id\": \"sc-directory\", \"type\": \"shortcut\", \"data\": {\"shortcut_name\": \"Company Directory\", \"col\": 3}}]",
  "creation": "2026-07-30 16:00:00",
  "custom_blocks": [],
  "docstatus": 0,
@@ -11,7 +11,7 @@
  "icon": "folder-normal",
  "idx": 0,
  "is_hidden": 0,
- "label": "Case Management",
+ "label": "Support IID",
  "links": [
   {
    "dependencies": "",
@@ -47,10 +47,10 @@
    "type": "Link"
   }
  ],
- "modified": "2026-08-25 12:00:00.000000",
+ "modified": "2026-08-25 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Support IID",
- "name": "Case Management",
+ "name": "Support IID",
  "number_cards": [],
  "owner": "Administrator",
  "parent_page": "",
@@ -94,6 +94,6 @@
    "type": "Page"
   }
  ],
- "title": "Case Management",
+ "title": "Support IID",
  "type": "Workspace"
 }

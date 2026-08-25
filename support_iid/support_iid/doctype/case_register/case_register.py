@@ -48,7 +48,7 @@ ACTION_LABEL = {
 	"Decline": "Declined",
 	"Send Back": "Sent Back for Revision",
 	"Reviewer Approve": "Verified",
-	"Reviewer Decline": "Declined (Final Verification)",
+	"Reviewer Send Back": "Sent Back for Revision (Final Verification)",
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -552,24 +552,48 @@ def _logo_inline_image():
 
 def _lines_to_html(lines):
 	"""Joins plain text lines into an HTML body: each line becomes its own
-	paragraph-like block, blank lines add spacing. Two lightweight markup
+	paragraph-like block, blank lines add spacing. Lightweight markup
 	forms are supported so call sites can build user-friendly emails
 	without writing raw HTML:
-	  **bold text**        -> <b>bold text</b>
-	  [Link label](url)    -> <a href="url">Link label</a>  (short,
-	                           readable link text instead of a raw URL)
+	  **bold text**          -> <b>bold text</b>
+	  [Link label](url)      -> <a href="url">Link label</a>  (short,
+	                             readable link text instead of a raw URL)
+	  [[Button label]](url)  -> a button styled exactly like Frappe's own
+	                             .btn.btn-primary (the same one its own
+	                             transactional emails use — password
+	                             reset, new user invite, etc; see
+	                             frappe/public/dist/css/email.bundle.*.css)
+	                             — for the one main call-to-action a
+	                             message is actually asking the reader to
+	                             click (take action on a case, view it,
+	                             withdraw it), so it doesn't read as just
+	                             another line of text. Not for every link
+	                             in a message — plain [label](url) is
+	                             still the right choice for a secondary/
+	                             optional link.
+	  ==highlighted text==    -> a highlighted inline span (amber
+	                             background, matching this app's accent
+	                             color language) — for the one or two
+	                             pieces of a line that genuinely need to
+	                             stand out from the surrounding **bold**
+	                             labels, not a general-purpose emphasis
+	                             tool call sites should reach for often.
 	Any bare https:// URL not already wrapped in [label](...) still
 	becomes a plain clickable link, same as before.
 	"""
 	# Single tokenizing pass over the RAW (unescaped) text — matches
-	# markdown-style link, bold, or a bare URL, in that priority order.
+	# markdown-style button, link, bold, highlight, or a bare URL, in
+	# that priority order ([[...]] is tried before [...] so a button
+	# doesn't get parsed as a link with literal brackets in its label).
 	# Everything between matches is plain text. Each piece is escaped
 	# individually and only then wrapped in its HTML tag, so the tags
 	# this function adds are never themselves escaped or re-matched.
 	token_re = re.compile(
-		r"\[([^\]]+)\]\((https?://[^\s)]+)\)"  # 1=label, 2=url
-		r"|\*\*([^*]+)\*\*"  # 3=bold text
-		r"|(https?://\S+)"  # 4=bare url
+		r"\[\[([^\]]+)\]\]\((https?://[^\s)]+)\)"  # 1=button label, 2=url
+		r"|\[([^\]]+)\]\((https?://[^\s)]+)\)"  # 3=label, 4=url
+		r"|\*\*([^*]+)\*\*"  # 5=bold text
+		r"|==([^=]+)=="  # 6=highlighted text
+		r"|(https?://\S+)"  # 7=bare url
 	)
 
 	def render(text):
@@ -580,11 +604,33 @@ def _lines_to_html(lines):
 			if m.group(1) is not None:
 				label = frappe.utils.escape_html(m.group(1))
 				url = frappe.utils.escape_html(m.group(2))
-				out.append(f'<a href="{url}"><b>{label}</b></a>')
+				# Same .btn.btn-primary values Frappe's own transactional
+				# emails use (password_reset.html, new_user.html, etc — see
+				# frappe/public/dist/css/email.bundle.*.css) — inlined here
+				# since this app builds its email HTML directly rather than
+				# through Frappe's website/email CSS pipeline, and inline
+				# styles are what actually survives in an email client
+				# regardless.
+				out.append(
+					f'<a href="{url}" style="text-decoration:none;padding:4px 20px;font-size:13px;'
+					"border:1px solid transparent;border-radius:6px;color:#ffffff;background-color:#171717;"
+					f'display:inline-block;line-height:20px;">{label}</a>'
+				)
 			elif m.group(3) is not None:
-				out.append(f"<b>{frappe.utils.escape_html(m.group(3))}</b>")
-			else:
+				label = frappe.utils.escape_html(m.group(3))
 				url = frappe.utils.escape_html(m.group(4))
+				out.append(f'<a href="{url}"><b>{label}</b></a>')
+			elif m.group(5) is not None:
+				out.append(f"<b>{frappe.utils.escape_html(m.group(5))}</b>")
+			elif m.group(6) is not None:
+				out.append(
+					'<span style="background:#fff3cd;color:#7a5b00;padding:1px 6px;'
+					'border-radius:4px;font-weight:600;">'
+					+ frappe.utils.escape_html(m.group(6))
+					+ "</span>"
+				)
+			else:
+				url = frappe.utils.escape_html(m.group(7))
 				out.append(f'<a href="{url}">{url}</a>')
 			pos = m.end()
 		out.append(frappe.utils.escape_html(text[pos:]))
@@ -1294,18 +1340,73 @@ or exists (
 )
 """
 
+# A case whose approval-stage table has no approver_email filled in on ANY
+# row has no one actually configured to act on it yet — an Approver or
+# Reviewer looking at it can't do anything with it (there's nothing
+# assigned to them, and nothing assigned to anyone else either), so it
+# should only be visible to the Requester who owns it (and System
+# Manager, who needs to see/fix a case in this state) until whoever sets
+# up the approval hierarchy actually fills an approver in.
+#
+# This is a VISIBILITY condition (gets ANDed into the list query's WHERE
+# clause), not a "should be hidden" condition — it must be TRUE for a case
+# that SHOULD show up, i.e. one that already has at least one configured
+# approver_email.
+_CASE_HAS_CONFIGURED_APPROVER_CONDITION = """
+exists (
+	select 1 from `tabCase Approval Stage` cas_any
+	where cas_any.parent = `tabCase Register`.name
+	and cas_any.approver_email is not null
+	and cas_any.approver_email != ''
+)
+"""
+
+
+def _case_has_no_configured_approver(doc):
+	"""Python-side inverse of _CASE_HAS_CONFIGURED_APPROVER_CONDITION, for
+	has_permission's direct single-doc checks (which already have the
+	doc loaded — no need for a query)."""
+	stages = doc.get("case_approval_stage") or []
+	return not any((stage.get("approver_email") or "").strip() for stage in stages)
+
+
+def _hide_unconfigured_cases_from(user):
+	"""True if `user` should NOT see a case with no configured approver at
+	all (see _CASE_HAS_CONFIGURED_APPROVER_CONDITION) — Support IID
+	Reviewer or Support IID Approver, but not System Manager/Administrator
+	(who need full visibility to actually fix the missing approver) and
+	not a Requester (who's already scoped to their own cases regardless
+	by _requester_only_scope_email, and should still see their OWN case
+	even before an approver's been configured for it)."""
+	user = user or frappe.session.user
+	if user in ("Administrator", "Guest"):
+		return False
+	roles = set(frappe.get_roles(user))
+	if "System Manager" in roles:
+		return False
+	return bool(roles & {"Support IID Reviewer", "Support IID Approver"})
+
 
 def get_permission_query_conditions(user=None, doctype=None):
 	"""
 	Restricts every list/report/dashboard query against Case Register:
-	  - Requester-only users: rows where requestor_email matches them.
+	  - Requester-only users: rows where requestor_email matches them —
+	    always, even before any approver's been configured for their case
+	    (it's still their own case either way).
 	  - Support IID Approver-only users: rows where they're the approver
 	    for the current pending stage, or a stage they already acted on
 	    (Approve/Decline/Send Back) — never a stage further down the
-	    chain that hasn't been reached yet.
-	Returns None (no extra condition) for System Manager, Reviewer, or
-	Administrator/Guest, who all keep their existing (broader)
-	visibility unchanged.
+	    chain that hasn't been reached yet. A genuinely unconfigured case
+	    (no approver_email on any stage) already can't match them as
+	    "their" approver, so no separate check is needed for this role —
+	    _CASE_HAS_CONFIGURED_APPROVER_CONDITION below only actually
+	    changes anything for Support IID Reviewer.
+	  - Support IID Reviewer (no per-case assignment, otherwise unscoped):
+	    excludes any case with no approver_email configured on any stage —
+	    nothing for them to review yet.
+	Returns None (no extra condition) for System Manager or
+	Administrator/Guest, who keep full, unrestricted visibility (needed to
+	actually notice and fix a case stuck with no approver configured).
 
 	Called by frappe.model.db_query as
 	frappe.call(method, self.user, doctype=self.doctype) — user is
@@ -1319,17 +1420,23 @@ def get_permission_query_conditions(user=None, doctype=None):
 	if approver_scope_email:
 		return _APPROVER_VISIBLE_CASE_CONDITION.format(approver_email=frappe.db.escape(approver_scope_email))
 
+	if _hide_unconfigured_cases_from(user):
+		return _CASE_HAS_CONFIGURED_APPROVER_CONDITION
+
 	return None
 
 
 def has_permission(doc, ptype=None, user=None, debug=False):
 	"""
 	Blocks a Requester-only user from opening a specific Case Register they
-	don't own directly, and blocks a Support IID Approver-only user from
+	don't own directly, blocks a Support IID Approver-only user from
 	opening a case whose stage assigned to them hasn't been reached yet
-	(e.g. by guessing/typing a URL) — the permission query condition
-	above only filters LIST-style queries, not a direct
-	frappe.get_doc/single-record fetch, so this closes that gap.
+	(e.g. by guessing/typing a URL), and blocks a Support IID Reviewer (or
+	Approver, though that case is already covered by the stage-matching
+	check below) from opening a case with no approver_email configured on
+	any stage at all — the permission query condition above only filters
+	LIST-style queries, not a direct frappe.get_doc/single-record fetch,
+	so this closes that gap for all three.
 
 	Called by frappe.permissions.has_controller_permissions as
 	frappe.call(method, doc=doc, ptype=ptype, user=user, debug=debug) — a
@@ -1371,6 +1478,9 @@ def has_permission(doc, ptype=None, user=None, debug=False):
 				return True  # already acted on this stage
 			if idx == current_idx:
 				return True  # this is their current turn
+		return False
+
+	if _hide_unconfigured_cases_from(user) and not doc.is_new() and _case_has_no_configured_approver(doc):
 		return False
 
 	return True
@@ -1844,6 +1954,7 @@ class CaseRegister(Document):
 		include_supporting_docs=False,
 		previous_action=None,
 		previous_comments=None,
+		previous_approver_name=None,
 	):
 		"""
 		Email the approver at ``stage_idx`` a simple plain-text request:
@@ -1876,7 +1987,18 @@ class CaseRegister(Document):
 			getattr(self, "requestor_name", None) or getattr(self, "requestor_email", None) or "requestor"
 		)
 
-		subject = f"Approval Required - [{self.name}] - {req_name} ({level_label})"
+		# previous_action == "Reviewer Approve" means the Support IID Reviewer
+		# has just passed this case through Final Verification and routed it
+		# straight back to this same last-stage approver for the one
+		# genuinely final decision. Every other approval request — the
+		# first stage included — is provisional: it's still subject to
+		# every later stage (and, at the last stage, the Reviewer's own
+		# Final Verification) approving too. Worth calling out in the
+		# subject itself, since to the approver it would otherwise look
+		# identical to any other stage's request.
+		is_final_round = previous_action == "Reviewer Approve"
+		approval_kind = "Final Approval" if is_final_round else "Provisional Approval"
+		subject = f"Approval Required - [{self.name}] - {req_name} ({approval_kind} ({level_label}))"
 
 		# Per-level web-form URL — carries an encrypted token (case + level +
 		# approver) instead of plain query params, so the link itself proves
@@ -1901,6 +2023,7 @@ class CaseRegister(Document):
 			registry_url=registry_url,
 			previous_action=previous_action,
 			previous_comments=previous_comments,
+			previous_approver_name=previous_approver_name,
 		)
 
 		attachments = []
@@ -1997,7 +2120,7 @@ class CaseRegister(Document):
 			# confirmation — NOT a regression to an earlier level, so this
 			# gets its own copy rather than reusing the generic
 			# "moved to the next approval level" message below.
-			subject = f"Case Update - [{self.name}] - {beneficiary}"
+			subject = f"Provisional Approval - [{self.name}] - {beneficiary}"
 			heading = "**Your case has passed final verification.**"
 			body_extra = (
 				f"The support request for {beneficiary or 'the beneficiary'} "
@@ -2009,7 +2132,7 @@ class CaseRegister(Document):
 			# Intermediate approval — more levels still to go. Distinct
 			# from the final Approve below: same action string, but this
 			# is "still in progress", not "fully done".
-			subject = f"Case Update - [{self.name}] - {beneficiary}"
+			subject = f"Provisional Approval - [{self.name}] - {beneficiary}"
 			heading = "**Your case has moved to the next approval level.**"
 			pending_phrase = (
 				f"pending **{next_level_label}**"
@@ -2023,7 +2146,7 @@ class CaseRegister(Document):
 				f"as it continues through the review process."
 			)
 		elif action == "Approve":
-			subject = f"Case Approved - [{self.name}] - {beneficiary}"
+			subject = f"Final Approval - [{self.name}] - {beneficiary}"
 			heading = "**Your case has been approved.**"
 			body_extra = (
 				f"Congratulations! This is the final level of approval, and "
@@ -2057,7 +2180,7 @@ class CaseRegister(Document):
 				# form open for edits — see case_register.js), instead of
 				# the guest web form's separate token + OTP edit flow.
 				edit_url = f"{get_url()}/desk/case-register/{self.name}"
-				action_line = f"[Edit and Resubmit]({edit_url})"
+				action_line = f"[[Edit and Resubmit]]({edit_url})"
 
 		lines = [
 			f"Dear {requestor_name},",
@@ -2101,7 +2224,9 @@ class CaseRegister(Document):
 		beneficiary = getattr(self, "beneficiary_name", None) or ""
 
 		stages = self.get("case_approval_stage") or []
-		level_label = (stages[0].case_approval_level_decription if stages else None) or "Level 1"
+		first_stage = stages[0] if stages else None
+		level_label = (first_stage.case_approval_level_decription if first_stage else None) or "Level 1"
+		approver_name = (first_stage.approver_name if first_stage else None) or ""
 
 		subject = f"Case Received - [{self.name}] - {beneficiary}"
 
@@ -2117,17 +2242,23 @@ class CaseRegister(Document):
 			f"has been received.",
 			f"**Case ID:** {self.name}",
 			"",
-			f"Your request is now pending **{level_label}** approval. You "
-			f"will receive an email update as it moves through the review "
-			f"process.",
+			(
+				f"Your request is now pending **{level_label}** approval, with "
+				f"**{approver_name}**. You will receive an email update as it "
+				f"moves through the review process."
+				if approver_name
+				else f"Your request is now pending **{level_label}** approval. You "
+				f"will receive an email update as it moves through the review "
+				f"process."
+			),
 			"",
 			"A copy of the case summary is attached for your records.",
 			"",
-			f"[View this case]({case_url})",
+			f"[[View this case]]({case_url})",
 			"",
 			"If you no longer need this request, you may withdraw it at "
 			"any time before a final decision is made:",
-			f"[Withdraw this case]({withdraw_url})",
+			f"[[Withdraw this case]]({withdraw_url})",
 			"",
 			"Regards,",
 		]
@@ -2154,7 +2285,7 @@ class CaseRegister(Document):
 	# ── Requestor resubmit acknowledgement email  (sent after an edit-and-
 	#    resubmit following Send Back) ──────────────────────────────────────
 
-	def _send_requestor_resubmit_acknowledgement_email(self, level_label=None):
+	def _send_requestor_resubmit_acknowledgement_email(self, level_label=None, approver_name=None):
 		"""
 		Plain-text acknowledgement to the requestor confirming their edits
 		were received and the case has been resubmitted for approval —
@@ -2181,13 +2312,19 @@ class CaseRegister(Document):
 			f"This is to confirm that your updates to case {self.name} have "
 			f"been received and resubmitted successfully.",
 			"",
-			f"The revised support request for {beneficiary or 'the beneficiary'} "
-			f"is now pending **{level_label or 'approval'}**. You will receive "
-			f"an email update as it moves through the review process.",
+			(
+				f"The revised support request for {beneficiary or 'the beneficiary'} "
+				f"is now pending **{level_label or 'approval'}**, with **{approver_name}**. "
+				f"You will receive an email update as it moves through the review process."
+				if approver_name
+				else f"The revised support request for {beneficiary or 'the beneficiary'} "
+				f"is now pending **{level_label or 'approval'}**. You will receive "
+				f"an email update as it moves through the review process."
+			),
 			"",
 			"If you no longer need this request, you may withdraw it at "
 			"any time before a final decision is made:",
-			f"[Withdraw this case]({withdraw_url})",
+			f"[[Withdraw this case]]({withdraw_url})",
 			"",
 			"Regards,",
 		]
@@ -2214,6 +2351,7 @@ class CaseRegister(Document):
 		registry_url,
 		previous_action=None,
 		previous_comments=None,
+		previous_approver_name=None,
 	):
 		"""
 		Builds the approval-request email body as a list of plain text
@@ -2340,9 +2478,26 @@ class CaseRegister(Document):
 				else ACTION_LABEL.get(previous_action, previous_action)
 			)
 			prev_line = f"Previous stage: {prev_stage_label}"
+			# Name the person who took that previous action, not just what
+			# happened — most useful for an Approve, since that's the case
+			# where the reader (the next approver, or the same last-level
+			# approver again after Final Verification) benefits from knowing
+			# exactly whose decision they're building on. "Reviewer Approve"
+			# is the Reviewer's Final Verification sign-off — the one round
+			# every ordinary level has already individually approved — so
+			# it's called out by name here too.
+			if previous_approver_name and previous_action in ("Approve", "Reviewer Approve"):
+				if previous_action == "Reviewer Approve":
+					prev_line += (
+						f" — {previous_approver_name} has approved the last level of approval "
+						"(Final Verification)"
+					)
+				else:
+					prev_line += f" — approved by {previous_approver_name}"
+			lines.append(prev_line)
 			if previous_comments:
-				prev_line += f" — {previous_comments}"
-			lines += [prev_line, ""]
+				lines.append(f"**Comments:** {previous_comments}")
+			lines.append("")
 
 		lines.append("**Case Details:**")
 		lines.append(f"**Beneficiary:** {ben_name}")
@@ -2355,15 +2510,16 @@ class CaseRegister(Document):
 		lines.append(f"**Ailment:** {ailment}" + (f", Treatment: {treatment}" if treatment else ""))
 		lines.append(f"**Hospital / Institution:** {hospital_display}")
 		lines.append(f"**Funds Requested:** {funds_formatted}")
-		lines.append(f"**Verification Notes:** {condition}")
+		lines.append(f"**Verification Notes:** =={condition}==")
 		lines.append("")
 		lines.append(
 			"The case summary and all supporting documents are attached for your reference."
 		)
-		lines.append("Please review the request and record your decision using the link below:")
+		lines.append("Please review the request and record your decision using the button below:")
 		lines.append("")
-		lines.append(f"[For Your Action — Approve / Send Back / Decline]({webform_url})")
-		lines.append(f"[Open in Case Registry]({registry_url})")
+		lines.append(f"[[For Your Action — Approve / Send Back / Decline]]({webform_url})")
+		lines.append("")
+		lines.append(f"[[View Case]]({registry_url})")
 		lines.append("")
 		lines.append("Regards,")
 
@@ -2559,6 +2715,7 @@ def process_case_approval(
 				include_supporting_docs=True,
 				previous_action=action,
 				previous_comments=comments,
+				previous_approver_name=approver_name,
 			)
 			# ...and the requestor, too — previously only the final Approve/
 			# Decline/Send Back notified them, so an intermediate level
@@ -2856,7 +3013,7 @@ def _notify_reviewers_of_provisional_approval(doc, approver_name, comments=None)
 		"",
 		"The full case summary PDF and all supporting documents are attached for your reference.",
 		"",
-		f"[For Your Action — Approve / Decline]({case_url})",
+		f"[[For Your Action — Approve / Decline]]({case_url})",
 		"",
 		"Regards,",
 	]
@@ -2903,9 +3060,16 @@ def reviewer_final_approval(case_name, action, comments=None):
 	handles that round exactly like the first, except this time it finds
 	a "Reviewer Approve" already logged and takes the real-Approved path
 	instead of coming back here again (see its own "else" branch).
-	Decline -> case_status becomes Rejected outright; this verification
-	is a genuine gate, not a rubber stamp, so a decline here behaves the
-	same as an Approver declining at any earlier stage.
+	Send Back -> same behavior as an ordinary approval stage's Send Back
+	(process_case_approval): case_status becomes "Sent Back", the
+	requestor gets the same edit-and-resubmit notification/link (see
+	_send_requestor_notification_email), targeting the LAST stage —
+	that's the stage the Reviewer's verification actually concerns, and
+	whoever holds it is who should see the case again once resubmitted.
+	No separate Decline here — a Reviewer who finds a real problem with
+	an already-fully-approved case sends it back for correction rather
+	than rejecting it outright, same reasoning as why this step doesn't
+	get its own approver_email-per-case model either.
 
 	Permission: Administrator, System Manager, or a user with the
 	Support IID Reviewer role (same pattern as close_case).
@@ -2918,8 +3082,8 @@ def reviewer_final_approval(case_name, action, comments=None):
 	):
 		frappe.throw("You don't have permission to verify this case.", frappe.PermissionError)
 
-	if action not in ("Approve", "Decline"):
-		frappe.throw("Invalid action. Must be 'Approve' or 'Decline'.")
+	if action not in ("Approve", "Send Back"):
+		frappe.throw("Invalid action. Must be 'Approve' or 'Send Back'.")
 
 	doc = frappe.get_doc("Case Register", case_name)
 	if doc.case_status != CASE_STATUS_PENDING or doc.current_approval_level != CASE_APPROVAL_LEVEL_REVIEWER:
@@ -2932,7 +3096,7 @@ def reviewer_final_approval(case_name, action, comments=None):
 	last_stage = stages[last_idx]
 
 	reviewer_name = frappe.utils.get_fullname(user) if user != "Guest" else "Support IID Reviewer"
-	log_action = "Reviewer Approve" if action == "Approve" else "Reviewer Decline"
+	log_action = "Reviewer Approve" if action == "Approve" else "Reviewer Send Back"
 
 	doc.append(
 		"case_approval_log",
@@ -2961,6 +3125,7 @@ def reviewer_final_approval(case_name, action, comments=None):
 			include_supporting_docs=True,
 			previous_action="Reviewer Approve",
 			previous_comments=comments,
+			previous_approver_name=reviewer_name,
 		)
 		doc._send_requestor_notification_email(
 			action="Approve",
@@ -2968,15 +3133,18 @@ def reviewer_final_approval(case_name, action, comments=None):
 			approver_name=reviewer_name,
 			final_round=True,
 		)
-	else:
-		doc.case_status = CASE_STATUS_REJECTED
-		doc.current_approval_level = ""
+	else:  # Send Back
+		last_level_label = last_stage.case_approval_level_decription or f"Level {last_idx + 1}"
+		doc.case_status = CASE_STATUS_SENT_BACK
+		last_stage.case_approval_status = "Send Back"
+		doc.current_approval_level = last_level_label
 		doc.save(ignore_permissions=True)
 		_safe_commit(case_name)
 		doc._send_requestor_notification_email(
-			action="Decline",
+			action="Send Back",
 			comments=comments,
 			approver_name=reviewer_name,
+			stage_idx=last_idx,
 		)
 
 	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
@@ -3220,7 +3388,7 @@ def _find_send_back_stage(doc):
 	return None, None
 
 
-def _resubmit_after_send_back(doc, stage_idx, previous_action):
+def _resubmit_after_send_back(doc, stage_idx, previous_action, previous_comments=None):
 	"""
 	Shared by submit_case_edit (guest, token + OTP authenticated) and
 	resubmit_case_from_desk (logged-in Requester, session authenticated)
@@ -3229,6 +3397,12 @@ def _resubmit_after_send_back(doc, stage_idx, previous_action):
 	(or, if the org's Approval Hierarchy has since changed, newly
 	current) approver. Assumes the caller already applied whatever
 	field edits it wanted and has NOT yet saved — this does the save.
+
+	previous_comments is the requestor's own note on what they changed —
+	only resubmit_case_from_desk's Desk dialog actually collects one
+	today (submit_case_edit's guest web form flow doesn't), so this is
+	None there and the "Previous stage" line in the re-approval email
+	just shows the action with no comment, same as it always has.
 	"""
 	stages = doc.get("case_approval_stage") or []
 
@@ -3266,8 +3440,12 @@ def _resubmit_after_send_back(doc, stage_idx, previous_action):
 		case_pdf_path=pdf_path,
 		include_supporting_docs=True,
 		previous_action=previous_action,
+		previous_comments=previous_comments,
 	)
-	doc._send_requestor_resubmit_acknowledgement_email(level_label=doc.current_approval_level)
+	doc._send_requestor_resubmit_acknowledgement_email(
+		level_label=doc.current_approval_level,
+		approver_name=stages[stage_idx].approver_name or "",
+	)
 
 
 @frappe.whitelist(allow_guest=True)
@@ -3324,7 +3502,7 @@ def submit_case_edit(token, data, otp=None, verify_ticket=None):
 
 
 @frappe.whitelist()
-def resubmit_case_from_desk(case_name):
+def resubmit_case_from_desk(case_name, comments=None):
 	"""
 	Resubmits a Sent-Back case straight from the Desk Case Register
 	form — the requestor edits fields directly on the (already
@@ -3332,6 +3510,14 @@ def resubmit_case_from_desk(case_name):
 	Resubmit. No token/OTP: an active Desk session already proves who
 	they are, unlike the guest submit_case_edit flow above, which has
 	no login to rely on.
+
+	comments is the requestor's own note on what they actually changed —
+	required by the Desk dialog (case_register.js), since the approver
+	re-reviewing this case has no other way to know what was fixed
+	without re-diffing every field themselves. Carried through to the
+	re-approval email via _resubmit_after_send_back's previous_comments,
+	the same "Previous stage: ... — <comments>" line an ordinary Take
+	Action's own comments already produce.
 
 	Only the case's own requestor (matched by session user's email) or
 	an Administrator/System Manager may call this.
@@ -3353,7 +3539,12 @@ def resubmit_case_from_desk(case_name):
 	if stage_idx is None:
 		frappe.throw("This case has no stage awaiting revision.")
 
-	_resubmit_after_send_back(doc, stage_idx, previous_action="Send Back (revised & resubmitted)")
+	_resubmit_after_send_back(
+		doc,
+		stage_idx,
+		previous_action="Send Back (revised & resubmitted)",
+		previous_comments=comments,
+	)
 
 	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
 
@@ -3361,13 +3552,22 @@ def resubmit_case_from_desk(case_name):
 @frappe.whitelist()
 def resolve_registry_link(token):
 	"""
-	Landing point for the "View in Case Registry" link sent to approvers
+	Landing point for the "Open in Case Registry" link sent to approvers
 	— the case name never appears in the email itself (make_registry_link_token
 	encrypts it into an opaque token instead), and this decrypts it,
 	confirms the CLICKING user (their real Desk session — this isn't a
 	guest/token-only flow like the approval/edit/withdraw links) still has
-	permission to see that case, then redirects into the Case Registry at
-	the right one. GET-navigable (a plain email link), not a JSON API call.
+	permission to see that case, then redirects to it. GET-navigable (a
+	plain email link), not a JSON API call.
+
+	Redirects to the standard Case Register doctype form
+	(/desk/case-register/<name> — same route every other case link in
+	this file already uses, e.g. the Send Back edit link) rather than
+	the custom Case Registry page's own hash route — that page is being
+	retired in favor of the standard doctype list/form as this app's
+	one case view going forward, so any new email this function's link
+	goes out on should already point at what's replacing it, not what's
+	being removed.
 	"""
 	payload = read_registry_link_token(token)
 	if not payload:
@@ -3382,4 +3582,4 @@ def resolve_registry_link(token):
 		frappe.throw("You don't have permission to view this case.", frappe.PermissionError)
 
 	frappe.local.response["type"] = "redirect"
-	frappe.local.response["location"] = f"/desk/case-registry#case-list/{case_name}"
+	frappe.local.response["location"] = f"/desk/case-register/{case_name}"
