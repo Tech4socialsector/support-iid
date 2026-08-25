@@ -22,7 +22,10 @@ def execute():
 	excluded_role_users = set(
 		frappe.get_all(
 			"Has Role",
-			filters={"role": ["in", ["Requester", "Support IID Approver", "Reviewer"]]},
+			filters={
+				"role": ["in", ["Requester", "Support IID Approver", "Reviewer"]],
+				"parenttype": "User",
+			},
 			pluck="parent",
 		)
 	)

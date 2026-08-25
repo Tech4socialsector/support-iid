@@ -48,8 +48,14 @@ def execute():
 
 	# Safety net: strip any Link field on any Web Form in this app that
 	# still points at a DocType which no longer exists, regardless of
-	# whether the reimport above caught it.
-	for web_form_name in frappe.get_all("Web Form", filters={"is_standard": 1}, pluck="name"):
+	# whether the reimport above caught it. Scoped to this app's own
+	# modules, same as the reimport loop above — without that filter this
+	# would also rewrite standard web forms belonging to any OTHER
+	# installed app (core Frappe ships some of its own), which this patch
+	# has no business touching.
+	for web_form_name in frappe.get_all(
+		"Web Form", filters={"is_standard": 1, "module": ["in", ["Case Management", "Master"]]}, pluck="name"
+	):
 		wf = frappe.get_doc("Web Form", web_form_name)
 		changed = False
 		for f in list(wf.web_form_fields):

@@ -20,7 +20,7 @@ def execute():
 	affected_users = set(
 		frappe.get_all(
 			"Has Role",
-			filters={"role": ["in", ["Support IID Approver", "Reviewer"]]},
+			filters={"role": ["in", ["Support IID Approver", "Reviewer"]], "parenttype": "User"},
 			pluck="parent",
 		)
 	)
