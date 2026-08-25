@@ -5,6 +5,13 @@ app_description = "Support IID is a grant and support management application dev
 app_email = "tech4socialsector@azimpremjifoundation.org"
 app_license = "mit"
 
+# Used by frappe.boot.app_data (see load_desktop_data in frappe/boot.py) as
+# the fallback app icon for the Desk's top-left workspace switcher header —
+# without this it falls through to Frappe's own generic logo, which is what
+# shows today. Same asset already used for the branded loader/modals/emails
+# elsewhere in this app.
+app_logo_url = "/assets/support_iid/images/apf_logo.png"
+
 # Apps
 # ------------------
 

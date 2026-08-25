@@ -2362,7 +2362,7 @@ class CaseRegister(Document):
 		)
 		lines.append("Please review the request and record your decision using the link below:")
 		lines.append("")
-		lines.append(f"[Review This Case]({webform_url})")
+		lines.append(f"[For Your Action — Approve / Send Back / Decline]({webform_url})")
 		lines.append(f"[Open in Case Registry]({registry_url})")
 		lines.append("")
 		lines.append("Regards,")
@@ -2856,7 +2856,7 @@ def _notify_reviewers_of_provisional_approval(doc, approver_name, comments=None)
 		"",
 		"The full case summary PDF and all supporting documents are attached for your reference.",
 		"",
-		f"[Review this case]({case_url})",
+		f"[For Your Action — Approve / Decline]({case_url})",
 		"",
 		"Regards,",
 	]
