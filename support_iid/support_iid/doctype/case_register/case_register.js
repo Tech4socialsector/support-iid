@@ -1286,20 +1286,35 @@ function case_register_resync_if_session_stale(frm, then) {
 // for the rest of that tab's life. A role granted to the SAME
 // still-logged-in user mid-session (e.g. someone is freshly given
 // Support IID Reviewer while their Desk tab has been open since before
-// that) leaves frappe.user_roles permanently missing it in that tab —
-// and unlike the session-user case, there's no click to hang a resync
-// off of, since the very problem is that the button gated on that role
-// (apply_reviewer_final_approval_button, apply_approver_action_button)
-// never renders in the first place for that user to click. So this
-// runs proactively on every refresh instead: if the case is actually
-// sitting in a state where a role-gated action button would matter
-// (Pending Approval) and the live DB roles differ from what's cached,
-// pull the fresh list into frappe.user_roles and re-run refresh() so
-// every button-visibility check downstream sees the corrected roles —
-// a plain reload_doc() would refetch the document but not this, since
-// boot data isn't part of what that call touches.
+// that) leaves frappe.user_roles permanently missing it in that tab.
+//
+// This is NOT just a button-visibility problem — every permlevel>0
+// field on this doctype (Milaap campaign link/recommendation at
+// permlevel 1; the whole Closure of case section — approved_amount,
+// utr_details, refund_amount_if_any, status_of_milaap_transfer,
+// date_of_transfer — at permlevel 2) is hidden or shown per-field by
+// frappe.perm.get_perm, which itself reads frappe.user_roles (see
+// get_role_permissions in frappe/public/js/frappe/model/perm.js) AND
+// memoizes its result per doctype for the rest of the tab's life
+// (frappe.perm.doctype_perm[doctype] ??= ...) — so even a role that
+// WAS current at the very first page load, before Reviewer was
+// granted, gets that one first computation cached forever, same as
+// frappe.user_roles itself. So a Reviewer whose tab predates being
+// granted that role doesn't just miss the Final Verification button —
+// they see a form silently missing every closure/Milaap field a
+// Reviewer needs, until they figure out to hard-refresh.
+//
+// Runs proactively on every refresh (not gated to a single
+// case_status — the closure fields specifically matter on an Approved
+// case, not just Pending Approval): if the live DB roles differ from
+// what's cached, patch frappe.user_roles, clear the memoized perm
+// cache for this doctype so it's recomputed against the corrected
+// roles, and re-run refresh() so every downstream visibility check —
+// button AND field — sees the fix. A plain reload_doc() would refetch
+// the document but not any of this, since none of it is part of what
+// that call touches.
 function case_register_resync_stale_roles(frm) {
-	if (frm.is_new() || frm.doc.case_status !== "Pending Approval") return;
+	if (frm.is_new()) return;
 	if (frappe.session.user === "Administrator") return;
 
 	frappe.call({
@@ -1317,7 +1332,25 @@ function case_register_resync_stale_roles(frm) {
 
 			frappe.user_roles = live_roles;
 			frappe.boot.user.roles = live_roles;
-			frm.refresh();
+			if (frappe.perm && frappe.perm.doctype_perm) {
+				delete frappe.perm.doctype_perm[frm.doctype];
+			}
+			// reload_doc(), not refresh() — refresh() alone re-renders
+			// using frm.doc exactly as it already sits in
+			// frappe.model.locals (the client's in-memory doc cache),
+			// which is a SEPARATE staleness problem from the roles fix
+			// above: this tab's copy of the case can itself predate the
+			// case actually reaching Final Verification (or any other
+			// state change), same as the roles being stale predates the
+			// role grant. Patching frappe.user_roles and only calling
+			// refresh() would still evaluate apply_reviewer_final_approval_
+			// button's `current_approval_level !== "Final Verification"`
+			// check against that old snapshot and correctly (from its own
+			// point of view) keep the button hidden — reload_doc() re-fetches
+			// the real document from the server first, and itself calls
+			// refresh() once that lands, so both halves of the staleness
+			// are corrected together.
+			frm.reload_doc();
 		},
 	});
 }

@@ -448,11 +448,79 @@ frappe.ready(function () {
         return true;
     }
 
+    // ONE-TIME SUBMIT — a fresh (non-edit-mode) registration is a guest
+    // form: there's no logged-in identity for Frappe's own allow_multiple
+    // setting (already 0 on this web form) to dedupe against, so nothing
+    // server-side stops the SAME browser session from submitting twice.
+    // Frappe's own handle_success() already swaps in a success page after
+    // a real save, which blocks an in-place double-click — but it does
+    // nothing about the user pressing the browser Back button afterward:
+    // most browsers restore the exact pre-submit DOM from bfcache without
+    // re-running this script, landing the user right back on the filled-in
+    // form with a working Submit button, ready to create a second, separate
+    // case for the same request. alreadySubmitted below is checked at the
+    // very top of the overridden save() so a second call can never reach
+    // original_save() at all; the pageshow listener re-asserts the locked
+    // UI state specifically for the bfcache-restore case, since that
+    // doesn't re-run frappe.ready and so wouldn't otherwise see this file's
+    // own initial state again.
+    var alreadySubmitted = false;
+
+    function lockFormAsSubmitted() {
+        var $submitBtn = $('.web-form .submit-btn, .web-form-footer .submit-btn');
+        $submitBtn.prop('disabled', true).css({ opacity: 0.6, cursor: 'not-allowed' });
+    }
+
+    window.addEventListener('pageshow', function (event) {
+        if (event.persisted && alreadySubmitted) {
+            lockFormAsSubmitted();
+        }
+    });
+
     if (!editToken) {
         frappe.web_form.save = function () {
+            if (alreadySubmitted) return false;
             if (!validate_all_fields_inline()) return false;
             if (!validateMandatoryDocuments()) return false;
-            return original_save();
+
+            // Frappe's own save() (frappe/public/js/frappe/web_form/web_form.js)
+            // ALWAYS returns false synchronously — even on the real, async
+            // submit path — so the return value alone can't tell "blocked
+            // before submitting" apart from "submission under way". It does
+            // set window.saving = true right before firing the actual
+            // frappe.call, though, and only on that real path — so checking
+            // it immediately after calling save() is what actually
+            // distinguishes the two. Anything blocked earlier inside
+            // save() itself (its own mandatory-field popup, the rare field
+            // this file's own validate_all_fields_inline doesn't already
+            // cover) never sets it, and the lock is released so the user
+            // can fix the problem and try again.
+            var already_saving = window.saving;
+            original_save();
+            if (!already_saving && !window.saving) return false;
+
+            alreadySubmitted = true;
+            lockFormAsSubmitted();
+
+            // A genuine success replaces the whole page (handle_success()
+            // hides .web-form-container and shows .success-page), so this
+            // timeout is inert then — nothing left on screen to re-enable.
+            // It only matters on a real server-side failure (network error,
+            // an exception accept() throws) after the request has already
+            // gone out: window.saving flips back to false once the call
+            // settles either way, but the page itself is untouched on
+            // failure, so without this the guest would be stuck staring at
+            // a permanently disabled Submit button with no way to retry.
+            setTimeout(function () {
+                if (!window.saving && $('.web-form-container').is(':visible')) {
+                    alreadySubmitted = false;
+                    $('.web-form .submit-btn, .web-form-footer .submit-btn')
+                        .prop('disabled', false)
+                        .css({ opacity: '', cursor: '' });
+                }
+            }, 4000);
+
+            return false;
         };
     }
 
