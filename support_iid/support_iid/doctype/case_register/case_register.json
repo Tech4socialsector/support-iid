@@ -95,7 +95,8 @@
    "in_standard_filter": 1,
    "label": "Case Status",
    "options": "Case Status List",
-   "read_only": 1
+   "read_only": 1,
+   "read_only_depends_on": "eval:!(frappe.user_roles.includes(\"System Manager\") || frappe.session.user === \"Administrator\")"
   },
   {
    "fieldname": "current_approval_level",

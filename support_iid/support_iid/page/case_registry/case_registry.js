@@ -28,20 +28,26 @@ const CASE_LIST_FIELDS = [
 const STATUS_COLOR = {
 	'Draft': 'gray', 'Submitted': 'blue', 'Rejected': 'red',
 	'Sent Back': 'yellow', 'On Hold': 'orange', 'Closed': 'gray',
-	'Approved': 'green', 'Withdrawn by the Requester': 'gray'
+	'Approved': 'green', 'Withdrawn by the Requester': 'gray',
+	'Final Verification': 'orange'
 };
 
-// The stored case_status value stays "Sent Back" (Link value, used in
-// filters/data/comparisons everywhere) — this is the one place that
-// value should actually show something friendlier to a user: "Pending
-// with Requester" instead of the more passive "Sent Back".
+// The stored case_status value stays "Sent Back"/"Final Verification"
+// (Link values, used in filters/data/comparisons everywhere) — these are
+// the places that value should actually show something friendlier to a
+// user: "Pending with Requester"/"Pending with Reviewer" instead of the
+// more passive/technical stored wording.
 //
 // "Rejected" is flagged as a restricted/spam-trigger word by some
 // outgoing-mail providers — shown as "Declined" everywhere instead
 // (matching the wording already used for the Decline action). The
 // stored case_status value stays "Rejected" for data/filter
 // consistency.
-const STATUS_DISPLAY_LABELS = { 'Sent Back': 'Pending with Requester', 'Rejected': 'Declined' };
+const STATUS_DISPLAY_LABELS = {
+	'Sent Back': 'Pending with Requester',
+	'Rejected': 'Declined',
+	'Final Verification': 'Pending with Reviewer'
+};
 function status_display_label(status) {
 	return STATUS_DISPLAY_LABELS[status] || status;
 }
@@ -450,6 +456,7 @@ class CaseListView {
 					<select id="cl-status" class="form-control" style="max-width:190px;flex:1 1 150px">
 						<option value="">All statuses</option>
 						<option>Pending Approval</option>
+						<option value="Final Verification">Pending with Reviewer</option>
 						<option>Approved</option>
 						<option value="Rejected">Declined</option>
 						<option value="Sent Back">Pending with Requester</option>

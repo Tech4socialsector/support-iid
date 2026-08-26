@@ -66,15 +66,31 @@ CASE_STATUS_SENT_BACK = "Sent Back"
 CASE_STATUS_CLOSED = "Closed"
 
 # current_approval_level value once every Case Approval Stage row has
-# approved — the case sits provisionally here (case_status stays
-# "Pending Approval", nothing new added to Case Status List) until a
-# Support IID Reviewer performs the final verification via
+# approved and the case moves to case_status CASE_STATUS_FINAL_VERIFICATION
+# (below), awaiting a Support IID Reviewer's final verification via
 # reviewer_final_approval(). Not a real stage row (this isn't part of
 # case_approval_stage at all — it's a role-based, not per-case, gate,
 # same as close_case()). Deliberately NOT named after the role itself
 # ("Reviewer") — that read as if the stage were just another numbered
 # approval level, when it's actually a distinct final check.
 CASE_APPROVAL_LEVEL_REVIEWER = "Final Verification"
+
+# A genuinely distinct case_status (its own Case Status List record,
+# created by the create_final_verification_case_status patch) for the
+# window between every ordinary approval level having approved and the
+# Reviewer's own final verification being recorded — previously this
+# reused CASE_STATUS_PENDING itself, distinguished only by
+# current_approval_level == CASE_APPROVAL_LEVEL_REVIEWER, which is real
+# data but invisible anywhere that only reads/filters/displays
+# case_status directly (list views, reports, the Desk status badge) —
+# every one of those showed the same generic "Pending Approval" a case
+# at L1 would, with no way to tell "still working through the ordinary
+# chain" apart from "already fully approved, just needs the Reviewer's
+# sign-off" without also inspecting current_approval_level. Having its
+# own case_status value fixes that everywhere at once, not just on the
+# one Desk form page apply_case_status_indicator (case_register.js) used
+# to patch the title-bar badge for.
+CASE_STATUS_FINAL_VERIFICATION = "Final Verification"
 CASE_STATUS_WITHDRAWN = "Withdrawn by the Requester"
 
 # Display-only relabeling — the stored case_status value (Link to Case
@@ -91,6 +107,7 @@ CASE_STATUS_DISPLAY_LABELS = {
 	# (ACTION_LABEL["Decline"] = "Declined") — the stored case_status
 	# value stays "Rejected" for data/filter consistency.
 	CASE_STATUS_REJECTED: "Declined",
+	CASE_STATUS_FINAL_VERIFICATION: "Pending with Reviewer",
 }
 
 
@@ -1069,6 +1086,12 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 	case_status_display = case_status_display_label(fgt("case_status"))
 	if fgt("case_status") == CASE_STATUS_PENDING and fgt("current_approval_level"):
 		case_status_display = f"{case_status_display} ({fgt('current_approval_level')})"
+	# CASE_STATUS_FINAL_VERIFICATION's own display label already says
+	# "Pending with Reviewer" — appending "(Final Verification)" on top
+	# would just repeat that same fact in different words, unlike the
+	# ordinary CASE_STATUS_PENDING case above where the level (L1/L2/...)
+	# is genuinely new information the bare "Pending Approval" label
+	# doesn't carry on its own.
 
 	story += sec("A", "CASE INFORMATION")
 	story.append(
@@ -2760,7 +2783,7 @@ def process_case_approval(
 					approver_name=approver_name,
 				)
 			else:
-				doc.case_status = CASE_STATUS_PENDING
+				doc.case_status = CASE_STATUS_FINAL_VERIFICATION
 				doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
 				doc.save(ignore_permissions=True)
 				_safe_commit(case_name)
@@ -2817,12 +2840,15 @@ def _do_withdraw_case(doc, reason):
 	withdraw_case_from_desk (logged-in Requester, session authenticated)
 	— actually applies the withdrawal once the caller has already
 	established who's asking and that they're allowed to. Only callable
-	while the case is still in progress (Pending Approval or Sent Back);
-	a case that's already Approved, Rejected, Closed, or already
+	while the case is still in progress (Pending Approval, Sent Back, or
+	Final Verification — nothing final has actually happened to a case
+	at Final Verification yet, it's still awaiting the Reviewer's own
+	sign-off, so it stays withdrawable exactly like an ordinary pending
+	stage); a case that's already Approved, Rejected, Closed, or already
 	Withdrawn can't be withdrawn a second time or reversed through
 	either entry point.
 	"""
-	if doc.case_status not in (CASE_STATUS_PENDING, CASE_STATUS_SENT_BACK):
+	if doc.case_status not in (CASE_STATUS_PENDING, CASE_STATUS_SENT_BACK, CASE_STATUS_FINAL_VERIFICATION):
 		frappe.throw(
 			"This case can no longer be withdrawn — its current status is "
 			+ (doc.case_status or "unknown")
@@ -3086,7 +3112,7 @@ def reviewer_final_approval(case_name, action, comments=None):
 		frappe.throw("Invalid action. Must be 'Approve' or 'Send Back'.")
 
 	doc = frappe.get_doc("Case Register", case_name)
-	if doc.case_status != CASE_STATUS_PENDING or doc.current_approval_level != CASE_APPROVAL_LEVEL_REVIEWER:
+	if doc.case_status != CASE_STATUS_FINAL_VERIFICATION or doc.current_approval_level != CASE_APPROVAL_LEVEL_REVIEWER:
 		frappe.throw("This case is not awaiting final verification.")
 
 	stages = doc.get("case_approval_stage") or []
@@ -3392,11 +3418,31 @@ def _resubmit_after_send_back(doc, stage_idx, previous_action, previous_comments
 	"""
 	Shared by submit_case_edit (guest, token + OTP authenticated) and
 	resubmit_case_from_desk (logged-in Requester, session authenticated)
-	— resets the stage that sent the case back to "Awaiting For
-	Approval" and re-sends the approval-request email to that same
-	(or, if the org's Approval Hierarchy has since changed, newly
-	current) approver. Assumes the caller already applied whatever
-	field edits it wanted and has NOT yet saved — this does the save.
+	— resets the stage that sent the case back and re-notifies whoever
+	actually needs to look at it again. Assumes the caller already
+	applied whatever field edits it wanted and has NOT yet saved — this
+	does the save.
+
+	Two different people can be the one who sent a case back with
+	stage_idx pointing at the very same (last) stage row either way, and
+	case_approval_stage itself has no field distinguishing them — only
+	case_approval_log's most recent entry does:
+	  - An ordinary approver's own Send Back on that stage -> ordinary
+	    path: reset the stage to "Awaiting For Approval" and re-send the
+	    approval-request email to that stage's approver, exactly as
+	    before.
+	  - The Support IID REVIEWER's Send Back from Final Verification
+	    (reviewer_final_approval's own "Send Back" branch) -> every
+	    stage, this one included, had already individually approved
+	    before the case ever reached the Reviewer — re-opening it as an
+	    ordinary approval would skip the Reviewer's own re-check
+	    entirely and silently drop the case back into the normal chain
+	    a level early. Restores the stage to "Approve" (undoing only the
+	    "Send Back" _reviewer_final_approval itself just wrote over it,
+	    not asking the approver to decide again) and routes the case
+	    back to Final Verification — notifying every Reviewer, the same
+	    way it was first reached — instead of the ordinary approver, who
+	    has nothing left to decide here.
 
 	previous_comments is the requestor's own note on what they changed —
 	only resubmit_case_from_desk's Desk dialog actually collects one
@@ -3405,6 +3451,27 @@ def _resubmit_after_send_back(doc, stage_idx, previous_action, previous_comments
 	just shows the action with no comment, same as it always has.
 	"""
 	stages = doc.get("case_approval_stage") or []
+	stage = stages[stage_idx]
+
+	logs = doc.get("case_approval_log") or []
+	sent_back_by_reviewer = bool(logs) and (logs[-1].action or "").strip() == "Reviewer Send Back"
+
+	if sent_back_by_reviewer:
+		stage.case_approval_status = "Approve"
+		doc.case_status = CASE_STATUS_FINAL_VERIFICATION
+		doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
+		doc.save(ignore_permissions=True)
+		_safe_commit(doc.name)
+
+		doc._rename_supporting_documents()
+		doc._generate_and_save_pdf(force=True)
+
+		_notify_reviewers_of_provisional_approval(doc, stage.approver_name or "", previous_comments)
+		doc._send_requestor_resubmit_acknowledgement_email(
+			level_label=doc.current_approval_level,
+			approver_name="",
+		)
+		return
 
 	# Re-fetch the current reviewer for this level from Approval Hierarchy —
 	# the org's approvers can change after a case was first submitted, and a
@@ -3414,17 +3481,17 @@ def _resubmit_after_send_back(doc, stage_idx, previous_action, previous_comments
 	try:
 		from support_iid.api.microsoft_graph import get_current_approver_for_level
 
-		level_name = stages[stage_idx].case_approval_level_decription
+		level_name = stage.case_approval_level_decription
 		current_approver = get_current_approver_for_level(doc.requestor_email, level_name)
 		if current_approver and current_approver.get("approver_email"):
-			stages[stage_idx].approver_name = current_approver["approver_name"]
-			stages[stage_idx].approver_email = current_approver["approver_email"]
+			stage.approver_name = current_approver["approver_name"]
+			stage.approver_email = current_approver["approver_email"]
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), f"Reviewer refresh failed on resubmit — {doc.name}")
 
-	stages[stage_idx].case_approval_status = "Awaiting For Approval"
+	stage.case_approval_status = "Awaiting For Approval"
 	doc.case_status = CASE_STATUS_PENDING
-	doc.current_approval_level = stages[stage_idx].case_approval_level_decription or f"Level {stage_idx + 1}"
+	doc.current_approval_level = stage.case_approval_level_decription or f"Level {stage_idx + 1}"
 	doc.save(ignore_permissions=True)
 	_safe_commit(doc.name)
 
@@ -3444,7 +3511,7 @@ def _resubmit_after_send_back(doc, stage_idx, previous_action, previous_comments
 	)
 	doc._send_requestor_resubmit_acknowledgement_email(
 		level_label=doc.current_approval_level,
-		approver_name=stages[stage_idx].approver_name or "",
+		approver_name=stage.approver_name or "",
 	)
 
 
@@ -3589,12 +3656,28 @@ def resolve_registry_link(token):
 def get_current_user_roles():
 	"""
 	Returns the CALLING user's role list straight from the DB, bypassing
-	whatever frappe.user_roles this Desk tab has cached in memory since
-	its own page load — see case_register_resync_stale_roles in
-	case_register.js's own docstring for why that cache can go stale
-	independently of the session itself (a role granted mid-session,
-	nothing about frappe.session.user changes, so the ordinary
-	get_logged_user-based resync never catches it, and nothing else in a
-	long-lived tab ever refreshes frappe.boot).
+	BOTH layers this can otherwise go stale behind:
+	  - frappe.user_roles, this Desk tab's own in-memory copy from its
+	    own page load — see case_register_resync_stale_roles in
+	    case_register.js's own docstring for why that cache can go stale
+	    independently of the session itself (a role granted mid-session,
+	    nothing about frappe.session.user changes, so the ordinary
+	    get_logged_user-based resync never catches it, and nothing else
+	    in a long-lived tab ever refreshes frappe.boot);
+	  - frappe.get_roles() itself, which is NOT the fresh DB read its use
+	    here originally assumed — it's backed by a Redis hash
+	    (frappe.cache.hget("roles", user, get), see frappe/permissions.py)
+	    that's only repopulated on a genuine cache miss, and otherwise
+	    just echoes back whatever was last cached, staleness and all.
+	    Saving the User record clears that entry via User.on_update() ->
+	    frappe.clear_cache(), which is normally enough — but if it
+	    doesn't reach the same Redis instance this request lands on for
+	    any reason (multi-instance deployment, timing), the "fresh"
+	    lookup this function was supposed to provide would just read the
+	    exact same wrong cached answer straight back out, defeating the
+	    whole point of calling it. Explicitly clearing the entry first
+	    forces the real DB query underneath frappe.get_roles to run,
+	    regardless of whatever Redis was holding onto.
 	"""
+	frappe.cache.hdel("roles", frappe.session.user)
 	return frappe.get_roles(frappe.session.user)

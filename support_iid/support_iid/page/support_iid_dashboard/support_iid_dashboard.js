@@ -101,7 +101,7 @@ const DRILLDOWN_COLUMNS = {
 const STATUS_COLOR = {
 	'Draft': 'gray', 'Submitted': 'blue', 'Rejected': 'red',
 	'Sent Back': 'orange', 'On Hold': 'orange', 'Closed': 'gray',
-	'Approved': 'green'
+	'Approved': 'green', 'Final Verification': 'orange'
 };
 function status_color(status) {
 	if (STATUS_COLOR[status]) return STATUS_COLOR[status];
@@ -109,10 +109,15 @@ function status_color(status) {
 	if (status.indexOf('Pending Approval') === 0) return 'orange';
 	return 'blue';
 }
-// The stored case_status value stays "Sent Back" (Link value, used in
-// filters/data/comparisons everywhere) — this is the one place that
-// value should actually show something friendlier to a user: "Pending
-// with Requester" instead of the more passive "Sent Back".
+// The stored case_status value stays "Sent Back"/"Final Verification"
+// (Link values, used in filters/data/comparisons everywhere) — these are
+// the places that value should actually show something friendlier to a
+// user: "Pending with Requester"/"Pending with Reviewer" instead of the
+// more passive/technical stored wording. Same relabeling
+// CASE_STATUS_DISPLAY_LABELS already applies server-side (case_register.py)
+// and case_register.js's own apply_case_status_indicator applies on the
+// Desk form — kept as a separate copy here since this dashboard has no
+// shared JS module with either of those to import from.
 const STATUS_DISPLAY_LABELS = {
 	'Sent Back': 'Pending with Requester',
 	// "Rejected" is flagged as a restricted/spam-trigger word by some
@@ -120,14 +125,20 @@ const STATUS_DISPLAY_LABELS = {
 	// (matching the wording already used for the Decline action). The
 	// stored case_status value stays "Rejected" for data/filter
 	// consistency.
-	'Rejected': 'Declined'
+	'Rejected': 'Declined',
+	'Final Verification': 'Pending with Reviewer'
 };
 function status_display_label(status) {
 	return STATUS_DISPLAY_LABELS[status] || status;
 }
 // Case Status is a fixed Link value ("Pending Approval") with the current
 // approval level tracked separately — this composes the two back into one
-// display string, e.g. "Pending Approval (L1 Reviewer)".
+// display string, e.g. "Pending Approval (L1 Reviewer)". Final Verification
+// is excluded here even though it also has a current_approval_level (the
+// same literal, "Final Verification") — appending it would just repeat
+// what "Pending with Reviewer" already says, unlike the ordinary Pending
+// Approval/Sent Back cases where the level (L1/L2/...) is genuinely new
+// information the bare status label doesn't carry on its own.
 function display_status(c) {
 	var label = status_display_label(c.case_status);
 	if ((c.case_status === 'Pending Approval' || c.case_status === 'Sent Back') && c.current_approval_level) {
@@ -791,7 +802,11 @@ class SupportIIDDashboard {
 		// not just the ones still in the Approved state.
 		var approved_rows = rows.filter((c) => c.case_status === 'Approved' || c.case_status === 'Closed');
 		var declined_rows = rows.filter((c) => c.case_status === 'Rejected');
-		var pending_rows = rows.filter((c) => c.case_status === 'Pending Approval');
+		// Final Verification cases are still awaiting a decision too — every
+		// ordinary approval level passed, but the Support IID Reviewer's own
+		// sign-off hasn't happened yet, so they belong in this count exactly
+		// like an ordinary Pending Approval case does.
+		var pending_rows = rows.filter((c) => c.case_status === 'Pending Approval' || c.case_status === 'Final Verification');
 		var total_approved_value = approved_rows.reduce((s, c) => s + case_amount(c), 0);
 		var total_requested_value = rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
 		var total_declined_value = declined_rows.reduce((s, c) => s + case_amount(c), 0);
@@ -810,7 +825,7 @@ class SupportIIDDashboard {
 			{
 				icon: icon('clock', 18), label: 'Pending for Approval Amount', value: format_currency(total_pending_value),
 				sub: pending_rows.length + ' pending case(s)',
-				click: () => self.open_drilldown('Pending approval cases', (c) => c.case_status === 'Pending Approval', 'status_no_approval')
+				click: () => self.open_drilldown('Pending approval cases', (c) => c.case_status === 'Pending Approval' || c.case_status === 'Final Verification', 'status_no_approval')
 			},
 			{
 				icon: '₹', label: 'Total Approved Amount', value: format_currency(total_approved_value),

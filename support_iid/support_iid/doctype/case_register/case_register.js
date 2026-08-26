@@ -522,6 +522,7 @@ frappe.ui.form.on("Case Register", {
 		apply_approver_read_only_view(frm);
 		apply_approver_action_button(frm);
 		apply_reviewer_final_approval_button(frm);
+		apply_case_status_indicator(frm);
 		case_register_resync_stale_roles(frm);
 
 		if (frm.doc.case_status !== "Draft" || frm.is_new()) return;
@@ -1150,7 +1151,12 @@ function apply_requester_post_submit_view(frm) {
 	frm.disable_save();
 	frm.disable_form();
 
-	if (frm.doc.case_status === "Pending Approval") {
+	// Final Verification is also still withdrawable — nothing final has
+	// actually happened to the case at that point, it's only awaiting
+	// the Reviewer's own sign-off, same reasoning as _do_withdraw_case
+	// accepting CASE_STATUS_FINAL_VERIFICATION server-side now too (see
+	// case_register.py).
+	if (frm.doc.case_status === "Pending Approval" || frm.doc.case_status === "Final Verification") {
 		frm.page.set_primary_action(__("Withdraw Case"), () => withdraw_case_from_desk_dialog(frm));
 	}
 }
@@ -1432,17 +1438,26 @@ function take_action_dialog(frm, current_stage) {
 }
 
 // Shows a "Final Verification" primary button once every Case Approval
-// Stage level has approved (current_approval_level is set to "Final
-// Verification" by process_case_approval's own final-stage branch —
-// case_status stays "Pending Approval" throughout; this is a provisional
-// approval, not yet the real thing). Any Support IID Reviewer/System
-// Manager/Administrator can act — this is a role-based gate here, not a
-// per-case assignment, so there's no approver_email to match against
-// like apply_approver_action_button does for ordinary stages.
+// Stage level has approved — case_status is its own distinct value,
+// CASE_STATUS_FINAL_VERIFICATION ("Final Verification", same literal as
+// CASE_APPROVAL_LEVEL_REVIEWER, see case_register.py), set by
+// process_case_approval's own final-stage branch once nothing's left
+// pending in the ordinary chain. Checking case_status alone (rather than
+// case_status === "Pending Approval" && current_approval_level ===
+// "Final Verification", the old two-field combination) is deliberate:
+// current_approval_level is a plain Data field with no permission of its
+// own guaranteed to survive every serialization path exactly the same
+// way case_status (the doctype's actual status field) does, so relying
+// on it alone for something this consequential — whether a Reviewer
+// even sees the button that lets them act at all — was a real risk
+// worth removing once a dedicated status made it possible to. Any
+// Support IID Reviewer/System Manager/Administrator can act — this is a
+// role-based gate here, not a per-case assignment, so there's no
+// approver_email to match against like apply_approver_action_button
+// does for ordinary stages.
 function apply_reviewer_final_approval_button(frm) {
 	if (frm.is_new()) return;
-	if (frm.doc.case_status !== "Pending Approval" || frm.doc.current_approval_level !== "Final Verification")
-		return;
+	if (frm.doc.case_status !== "Final Verification") return;
 
 	var roles = frappe.user_roles || [];
 	var can_act =
@@ -1454,6 +1469,25 @@ function apply_reviewer_final_approval_button(frm) {
 	frm.page.set_primary_action(__("Final Verification"), () =>
 		case_register_resync_if_session_stale(frm, () => reviewer_final_approval_dialog(frm))
 	);
+}
+
+// Frappe's own toolbar sets the title-bar status badge automatically
+// from case_status alone (frappe.get_indicator(frm.doc), called from
+// Toolbar.refresh() as part of core's refresh_header() — runs BEFORE
+// this doctype's own refresh(frm) trigger, so a set_indicator call here
+// correctly overrides it). case_status now has its own dedicated
+// CASE_STATUS_FINAL_VERIFICATION value ("Final Verification" — see
+// case_register.py), so the default indicator would already show that
+// literal Case Status List value correctly on its own; this only swaps
+// in the friendlier "Pending with Reviewer" wording, matching the same
+// CASE_STATUS_DISPLAY_LABELS relabeling case_register.py already
+// applies server-side (emails, the case-summary PDF) for this exact
+// status, and for Sent Back ("Pending with Requester").
+function apply_case_status_indicator(frm) {
+	if (frm.is_new()) return;
+	if (frm.doc.case_status === "Final Verification") {
+		frm.page.set_indicator(__("Pending with Reviewer"), "orange");
+	}
 }
 
 function reviewer_final_approval_dialog(frm) {

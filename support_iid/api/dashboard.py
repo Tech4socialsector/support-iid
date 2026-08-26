@@ -51,25 +51,6 @@ def _attach_approved_by(rows):
 	return rows
 
 
-def _is_dashboard_admin():
-	user = frappe.session.user
-	return user == "Administrator" or "System Manager" in frappe.get_roles(user)
-
-
-def _approver_case_names():
-	"""
-	Case names where the current user appears as an approver at any stage
-	— used to scope non-admin users to only the cases relevant to them.
-	"""
-	stage_rows = frappe.get_all(
-		"Case Approval Stage",
-		filters={"approver_email": frappe.session.user},
-		fields=["parent"],
-		limit_page_length=0,
-	)
-	return list({s.parent for s in stage_rows})
-
-
 @frappe.whitelist()
 def get_dashboard_data(from_date=None, to_date=None):
 	"""
@@ -77,10 +58,15 @@ def get_dashboard_data(from_date=None, to_date=None):
 	Support IID Dashboard needs to compute its Key Metrics and filters,
 	entirely on the client.
 
-	Scoped to the logged-in user: Administrator / System Manager see every
-	case; anyone else sees only cases where they appear as an approver at
-	some stage (matched on approver_email == frappe.session.user, same
-	check already used to decide who can act on a case).
+	Scoped to the logged-in user exactly like Case Register's own doctype
+	permissions (get_permission_query_conditions in case_register.py):
+	Administrator/System Manager see every case; a Requester sees only
+	their own cases; a Support IID Approver sees cases relevant to their
+	place in the approval chain; a Support IID Reviewer sees every case
+	that has at least one configured approver (no per-case assignment for
+	that role). Enforced by frappe.get_list applying that same permission
+	query condition automatically, so this can't drift out of sync with
+	the doctype's real rules.
 
 	Args:
 	    from_date: optional — only include cases with request_date >= this
@@ -102,25 +88,23 @@ def get_dashboard_data(from_date=None, to_date=None):
 	elif to_date:
 		filters["request_date"] = ["<=", to_date]
 
-	# frappe.get_all (used below, for the fields it needs) always sets
-	# ignore_permissions=True internally — it never applies Case Register's
-	# permission query condition (see get_permission_query_conditions in
-	# case_register.py), so a Requester-only user's scoping has to be
-	# applied here explicitly, same as the existing approver-scoping branch.
-	from support_iid.support_iid.doctype.case_register.case_register import (
-		_requester_only_scope_email,
-	)
-
-	requester_scope_email = _requester_only_scope_email()
-	if requester_scope_email:
-		filters["requestor_email"] = requester_scope_email
-	elif not _is_dashboard_admin():
-		allowed_names = _approver_case_names()
-		if not allowed_names:
-			return []
-		filters["name"] = ["in", allowed_names]
-
-	rows = frappe.get_all("Case Register", fields=DASHBOARD_FIELDS, filters=filters, limit_page_length=0)
+	# frappe.get_list (unlike frappe.get_all, used here previously) applies
+	# Case Register's own permission query condition automatically — see
+	# get_permission_query_conditions in case_register.py, which already
+	# correctly scopes a Requester to their own cases, an Approver to
+	# cases relevant to their place in the approval chain, and a Reviewer
+	# to every case that has at least one configured approver (no
+	# per-case assignment for that role — matches has_permission's own
+	# model). Re-deriving that same scoping by hand here (as this used to)
+	# is exactly how a Support IID Reviewer ended up seeing NO cases on
+	# this dashboard at all: the old code only ever recognized
+	# Administrator/System Manager as "sees everything" and fell every
+	# other role — Reviewer included — through to the approver-only
+	# per-stage-assignment filter, which a Reviewer (who isn't assigned to
+	# any individual stage) always failed. Calling frappe.get_list instead
+	# means this dashboard can never drift out of sync with the doctype's
+	# real permission rules again, for this role or any future one.
+	rows = frappe.get_list("Case Register", fields=DASHBOARD_FIELDS, filters=filters, limit_page_length=0)
 	return _attach_approved_by(rows)
 
 
@@ -240,13 +224,18 @@ def export_case_list(names, file_format):
 		if not names:
 			frappe.throw("No cases to export.")
 
-		if not _is_dashboard_admin():
-			allowed_names = set(_approver_case_names())
-			names = [n for n in names if n in allowed_names]
-			if not names:
-				frappe.throw("No cases to export.")
-
-		rows = frappe.get_all(
+		# frappe.get_list (not frappe.get_all — see get_dashboard_data's own
+		# comment above) applies Case Register's real permission query
+		# condition automatically, so a caller can never export a case
+		# their own role doesn't actually have permission to see just by
+		# passing its name in — this replaces the old hand-rolled
+		# _approver_case_names() re-check, which (a) only ever recognized
+		# Administrator/System Manager as unrestricted, wrongly blocking a
+		# Reviewer from exporting cases they can see everywhere else in
+		# this dashboard, and (b) never applied Requester scoping at all,
+		# so a Requester passing another requestor's case name here would
+		# have gone straight through to the export.
+		rows = frappe.get_list(
 			"Case Register",
 			fields=[
 				"name",
@@ -261,6 +250,8 @@ def export_case_list(names, file_format):
 			order_by="request_date desc",
 			limit_page_length=0,
 		)
+		if not rows:
+			frappe.throw("No cases to export.")
 		rows = _attach_approved_by(rows)
 		headers, data = _export_rows_for_display(rows)
 
