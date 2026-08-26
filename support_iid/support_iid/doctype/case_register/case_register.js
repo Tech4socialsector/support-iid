@@ -522,6 +522,7 @@ frappe.ui.form.on("Case Register", {
 		apply_approver_read_only_view(frm);
 		apply_approver_action_button(frm);
 		apply_reviewer_final_approval_button(frm);
+		case_register_resync_stale_roles(frm);
 
 		if (frm.doc.case_status !== "Draft" || frm.is_new()) return;
 
@@ -1274,6 +1275,49 @@ function case_register_resync_if_session_stale(frm, then) {
 				return;
 			}
 			then();
+		},
+	});
+}
+
+// frappe.user_roles is the OTHER half of the same staleness problem
+// case_register_resync_if_session_stale handles for frappe.session.user
+// — both are populated once, from frappe.boot, at page load (see
+// set_globals() in frappe/public/js/frappe/desk.js) and never refreshed
+// for the rest of that tab's life. A role granted to the SAME
+// still-logged-in user mid-session (e.g. someone is freshly given
+// Support IID Reviewer while their Desk tab has been open since before
+// that) leaves frappe.user_roles permanently missing it in that tab —
+// and unlike the session-user case, there's no click to hang a resync
+// off of, since the very problem is that the button gated on that role
+// (apply_reviewer_final_approval_button, apply_approver_action_button)
+// never renders in the first place for that user to click. So this
+// runs proactively on every refresh instead: if the case is actually
+// sitting in a state where a role-gated action button would matter
+// (Pending Approval) and the live DB roles differ from what's cached,
+// pull the fresh list into frappe.user_roles and re-run refresh() so
+// every button-visibility check downstream sees the corrected roles —
+// a plain reload_doc() would refetch the document but not this, since
+// boot data isn't part of what that call touches.
+function case_register_resync_stale_roles(frm) {
+	if (frm.is_new() || frm.doc.case_status !== "Pending Approval") return;
+	if (frappe.session.user === "Administrator") return;
+
+	frappe.call({
+		method: "support_iid.support_iid.doctype.case_register.case_register.get_current_user_roles",
+		callback: function (r) {
+			var live_roles = r.message;
+			if (!Array.isArray(live_roles)) return;
+			var cached_roles = frappe.user_roles || [];
+			var changed =
+				live_roles.length !== cached_roles.length ||
+				live_roles.some(function (role) {
+					return cached_roles.indexOf(role) === -1;
+				});
+			if (!changed) return;
+
+			frappe.user_roles = live_roles;
+			frappe.boot.user.roles = live_roles;
+			frm.refresh();
 		},
 	});
 }

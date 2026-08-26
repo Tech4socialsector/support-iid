@@ -3583,3 +3583,18 @@ def resolve_registry_link(token):
 
 	frappe.local.response["type"] = "redirect"
 	frappe.local.response["location"] = f"/desk/case-register/{case_name}"
+
+
+@frappe.whitelist()
+def get_current_user_roles():
+	"""
+	Returns the CALLING user's role list straight from the DB, bypassing
+	whatever frappe.user_roles this Desk tab has cached in memory since
+	its own page load — see case_register_resync_stale_roles in
+	case_register.js's own docstring for why that cache can go stale
+	independently of the session itself (a role granted mid-session,
+	nothing about frappe.session.user changes, so the ordinary
+	get_logged_user-based resync never catches it, and nothing else in a
+	long-lived tab ever refreshes frappe.boot).
+	"""
+	return frappe.get_roles(frappe.session.user)
