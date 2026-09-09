@@ -148,8 +148,6 @@ class CompanyDirectory {
 			method: 'support_iid.api.microsoft_graph.start_directory_full_load',
 			freeze: false,
 			callback: function () {
-				// Progress/completion arrive via realtime — nothing else
-				// to do here once the job is queued.
 			},
 			error: function () {
 				self.progress_wrap_el.hide();

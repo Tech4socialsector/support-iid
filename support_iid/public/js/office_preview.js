@@ -1,11 +1,3 @@
-/*
- * Client-side Office document preview — renders .docx/.xlsx/.xls files
- * directly in the browser using vendored docx-preview / SheetJS, so no
- * file content is ever sent to a server-side converter or an external
- * service. PowerPoint (.ppt/.pptx) and legacy .doc/.odt/.ods/.odp have no
- * reliable in-browser renderer available offline, so those fall back to
- * a clear "download instead" message rather than a broken preview.
- */
 (function (global) {
 	var VENDOR_BASE = '/assets/support_iid/js/vendor/';
 	var loaded = {};
@@ -49,9 +41,6 @@
 		return html;
 	}
 
-	// container: a jQuery-wrapped or plain DOM element to render into.
-	// Returns a Promise that resolves once rendering completes (or rejects
-	// with an Error carrying a user-facing .message on failure).
 	function renderOfficePreview(container, fileUrl, ext) {
 		var el = container.jquery ? container.get(0) : container;
 

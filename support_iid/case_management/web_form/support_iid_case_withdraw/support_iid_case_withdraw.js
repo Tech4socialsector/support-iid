@@ -1,10 +1,5 @@
 frappe.ready(function () {
 
-    /* =========================================================
-       AES-GCM DECRYPTION — same key/shape as the registration and
-       approval web forms' decrypt helpers; must match encrypt_response()
-       in case_register.py.
-    ========================================================= */
 
     var AES_KEY_B64 = "sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=";
 
@@ -34,13 +29,6 @@ frappe.ready(function () {
         });
     }
 
-    /* =========================================================
-       1. Read the encrypted withdraw token from the URL and
-          resolve it (guest-safe) to pre-fill case info. The token —
-          not case_id in a plain query param — is what proves the
-          caller received the emailed link; the OTP step below proves
-          they can access that inbox right now.
-    ========================================================= */
 
     var params = new URLSearchParams(window.location.search);
     var token = params.get('token') || '';
@@ -98,12 +86,6 @@ frappe.ready(function () {
         frappe.web_form.set_df_property('reason', 'hidden', 1);
     }
 
-    /* =========================================================
-       2. OTP flow — Send Code, then an explicit Verify step.
-          Progressive reveal: the Verification Code field is hidden
-          until "Send Verification Code" is clicked; the Reason field
-          + Withdraw button stay hidden until the code is verified.
-    ========================================================= */
 
     function refreshSaveVisibility() {
         var $submitBtn = $('.web-form .submit-btn, .web-form-footer .submit-btn');
@@ -220,14 +202,6 @@ frappe.ready(function () {
         });
     }
 
-    /* =========================================================
-       3. After form save — call withdraw_case with the reason,
-          token, and verify_ticket. Replaces the page content with a
-          plain success state instead of reloading (reloading the
-          same URL after this point would re-run the whole flow on a
-          token that's no longer valid for withdrawal — the case has
-          already moved on).
-    ========================================================= */
 
     function showWithdrawSuccess() {
         $('.web-form-body').remove();
@@ -279,10 +253,6 @@ frappe.ready(function () {
         });
     };
 
-    /* =========================================================
-       4. TITLE + LOGO SWAP — same treatment as the other Support IID
-          web forms, for a consistent branded look.
-    ========================================================= */
 
     var titleTries = 0;
     var titleTimer = setInterval(function () {

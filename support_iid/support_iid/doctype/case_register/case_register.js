@@ -1,12 +1,4 @@
-// Copyright (c) 2026, Tech For Social Sector and contributors
-// For license information, please see license.txt
 
-// Same in-browser Office-document renderer (docx/xlsx/xls/csv, vendored —
-// no file content ever leaves the browser) the Case Registry page and
-// Support IID Dashboard already load for their own document preview
-// modals — see case_register_open_document_preview below, and
-// office_preview.js's own header comment for exactly what it does and
-// doesn't support.
 if (!document.getElementById('siid-office-preview-script')) {
 	var siid_preview_script = document.createElement('script');
 	siid_preview_script.id = 'siid-office-preview-script';
@@ -14,9 +6,6 @@ if (!document.getElementById('siid-office-preview-script')) {
 	document.head.appendChild(siid_preview_script);
 }
 
-// Same mandatory-document row styling support_iid_case_registration.js
-// (the guest web form) injects — a subtle left border + background tint,
-// not text in the Document Name cell (which wraps and breaks alignment).
 $(
 	"<style>" +
 		".sd-mandatory-row { border-left:3px solid #c0392b; background:#fdf3f2; }" +
@@ -24,15 +13,6 @@ $(
 		"</style>"
 ).appendTo("head");
 
-// ── Mobile-friendly child tables ─────────────────────────────────────────
-// This form's four grids (Case Approval Stage, Case Approval Log,
-// Supporting Documents, Family Members) are standard Frappe grids —
-// Frappe core has no mobile-specific grid layout, so on a phone they're
-// just a cramped horizontal-scroll table with tiny touch targets. This is
-// a CSS-only polish pass (bigger touch targets, clearer scroll affordance,
-// larger type at narrow widths) — it keeps the grid as a grid rather than
-// rebuilding it as a card list, and only takes effect under the same
-// ~640px breakpoint used elsewhere in this app's own custom pages.
 if (!document.getElementById("case-register-mobile-grid-style")) {
 	var mobile_grid_style = document.createElement("style");
 	mobile_grid_style.id = "case-register-mobile-grid-style";
@@ -50,13 +30,6 @@ if (!document.getElementById("case-register-mobile-grid-style")) {
 	document.head.appendChild(mobile_grid_style);
 }
 
-// ── Branded loader ────────────────────────────────────────────────────────
-// Same look as the guest web form's own showLoader/hideLoader (a spinning
-// ring around the APF logo) instead of Frappe's plain freeze overlay —
-// used in place of every frappe.call({freeze: true, freeze_message}) on
-// this form so Graph lookups/Submit/Take Action/Withdraw all show the
-// same branded loading state a Requester/Approver already sees on the
-// public web forms.
 if (!document.getElementById("case-register-loader-style")) {
 	var loader_style = document.createElement("style");
 	loader_style.id = "case-register-loader-style";
@@ -91,10 +64,6 @@ function case_register_hide_loader() {
 	$("#case-register-loader").remove();
 }
 
-// Wraps a frappe.call config: replaces its freeze/freeze_message with the
-// branded loader, shown before the call and hidden via `always` (which
-// frappe.call fires exactly once regardless of success/error), so
-// callers don't have to remember to hide it themselves.
 function case_register_call_with_loader(opts) {
 	var message = opts.freeze_message;
 	var original_always = opts.always;
@@ -109,13 +78,6 @@ function case_register_call_with_loader(opts) {
 	frappe.call(opts);
 }
 
-// ── Custom modal system ───────────────────────────────────────────────────
-// A fully custom overlay/card — not frappe.ui.Dialog — for every one of
-// this form's own significant actions (Submit, Resubmit, Withdraw, Take
-// Action, Reviewer Sign-off). Shares the same visual language as the
-// branded loader above (logo, accent blue #2490ef, neutral #36414c text)
-// instead of Frappe's generic modal chrome, with its own focus handling,
-// Escape-to-close, and backdrop-click-to-close.
 if (!document.getElementById("case-register-modal-style")) {
 	var modal_style = document.createElement("style");
 	modal_style.id = "case-register-modal-style";
@@ -129,8 +91,6 @@ if (!document.getElementById("case-register-modal-style")) {
 	document.head.appendChild(modal_style);
 }
 
-// opts: { title, message, fields: [{fieldname, type: 'select'|'text'|'check', label, options, default, reqd}],
-//         primary_label, on_submit(values) }
 function case_register_open_modal(opts) {
 	var overlay = document.createElement("div");
 	overlay.style.cssText =
@@ -272,11 +232,6 @@ function case_register_open_modal(opts) {
 	if (first_input) first_input.focus();
 }
 
-// Used in place of frappe.confirm for the app's own significant, one-way
-// actions (Submit, Resubmit) — carries the APF logo instead of Frappe's
-// bare Yes/No prompt, and requires an explicit declaration checkbox
-// (unticked by default) before the action can actually be confirmed,
-// rather than a single click on "Yes" being enough on its own.
 function case_register_branded_confirm(message, declaration_label, on_confirm) {
 	case_register_open_modal({
 		message: message,
@@ -291,49 +246,21 @@ function case_register_branded_confirm(message, declaration_label, on_confirm) {
 
 frappe.ui.form.on("Case Register", {
 	onload(frm) {
-		// Auto-fill on a brand-new case only — an existing case already has
-		// its own requestor_email (possibly different from whoever happens
-		// to be viewing/reassigning it in the Desk), so this must never
-		// overwrite real data on an already-submitted or already-saved doc.
 		if (!frm.is_new()) return;
 
 		if (frm.doc.requestor_email) {
-			// requestor_email can already be set here even on a genuinely
-			// new, unsaved doc: Frappe restores an in-progress "New Case
-			// Register" doc from its local per-tab cache on a page refresh/
-			// reopen of the same new-case-register-... route, WITHOUT
-			// re-running this onload's own set_value below (that only fires
-			// once, the first time this route is freshly created) — so a
-			// refresh that happens before the Graph fetch below ever
-			// completed left requestor_email filled in from the cached doc
-			// while requestor_name/department/work_location stayed
-			// permanently blank, with nothing left to trigger the lookup
-			// again. If those auto-fill-only fields are all still empty,
-			// this is exactly that case (a real reassigned-to case would
-			// already have them from whoever originally filled the form),
-			// so retry the lookup; otherwise leave a doc that already has
-			// real data alone.
 			var already_has_autofill = frm.doc.requestor_name || frm.doc.department || frm.doc.work_location;
 			if (!already_has_autofill) {
 				fetch_requestor_details(frm, frm.doc.requestor_email);
 			}
 			return;
 		}
-		// frappe.session.user is the literal string "Administrator" or
-		// "Guest" for those accounts, not a real email — get_employee_details
-		// would just throw trying to look either up as an org email.
 		if (["Administrator", "Guest"].includes(frappe.session.user)) return;
 
 		frm.set_value("requestor_email", frappe.session.user);
 		fetch_requestor_details(frm, frappe.session.user);
 	},
 
-	// Covers the manual-entry case (e.g. an Administrator/System Manager
-	// filing a case on a requester's behalf, or the onload auto-fill being
-	// skipped for Administrator/Guest) — same lookup the onload auto-fill
-	// triggers, just fired off whenever the field itself actually changes,
-	// exactly like the guest web form's debouncedEmailHandler does for its
-	// own requestor_email field.
 	requestor_email: frappe.utils.debounce(function (frm) {
 		case_register_validate_email(frm, "requestor_email");
 		var email = (frm.doc.requestor_email || "").trim();
@@ -351,28 +278,14 @@ frappe.ui.form.on("Case Register", {
 		case_register_validate_mobile(frm, "requestor_mobile_number");
 	},
 
-	// Mirrors applyInsuranceVisibility() in support_iid_case_registration.js
-	// — Insurance Coverage Details is only relevant (and only mandatory)
-	// once an actual insurance type is picked; with "No Insurance" or
-	// nothing selected yet, there's nothing to describe.
 	insurance_type(frm) {
 		apply_insurance_visibility(frm, frm.doc.insurance_type);
 	},
 
-	// Mirrors applyVerificationVisibility() in support_iid_case_registration.js
-	// — the notes field only makes sense once a physical visit actually
-	// happened; clearing it on "No" avoids leaving stale notes behind a
-	// hidden field that no longer applies.
 	physical_verification(frm) {
 		apply_verification_visibility(frm, frm.doc.physical_verification);
 	},
 
-	// Mirrors the "PINCODE -> STATE & DISTRICT AUTO-FILL" block in
-	// support_iid_case_registration.js (the guest web form) — same public
-	// India Post lookup, same behavior on an invalid/no-match pincode
-	// (state/district cleared, error shown). state/district are read_only
-	// on the doctype itself (case_register.json) since they're only ever
-	// meant to be set by this lookup, never typed in directly.
 	pincode(frm) {
 		var pin = String(frm.doc.pincode || "").trim();
 		if (!pin) return;
@@ -407,22 +320,9 @@ frappe.ui.form.on("Case Register", {
 			});
 	},
 
-	// The following mirror case_register.py's server-side validate()
-	// checks (pincode format handled above, DOB-not-future, email
-	// shape/domain, mobile format, currency numeric-only) so a bad value
-	// shows inline under its own field the moment it's entered, instead
-	// of only surfacing as a popup dialog from the server on Save.
-	// validate() itself is left in place as the authoritative check (a
-	// direct API call still can't bypass it) — these are a client-side
-	// convenience layer on top, exactly like the guest web form has.
 	date_of_birth(frm) {
 		if (!frm.doc.date_of_birth) return;
 		if (!case_register_validate_dob(frm)) return;
-		// Mirrors the "DATE OF BIRTH -> AGE AUTO-CALCULATE" block in
-		// support_iid_case_registration.js. age itself stays a normal,
-		// editable field (not read_only) — this only sets a starting
-		// value so staff aren't forced to work it out by hand, matching
-		// what the web form already does for the requestor.
 		var dob = frappe.datetime.str_to_obj(frm.doc.date_of_birth);
 		var today = new Date();
 		var age = today.getFullYear() - dob.getFullYear();
@@ -455,12 +355,6 @@ frappe.ui.form.on("Case Register", {
 		case_register_validate_mobile(frm, "primary_contact_mobile");
 	},
 
-	// Debounced (mirrors the guest web form's debouncedFundsHandler) —
-	// a Currency field fires this on every keystroke, and each call
-	// re-runs the Microsoft Graph lookup (get_employee_details) to
-	// rescale approval_stages to the new amount. Calling that on every
-	// keystroke was hitting Graph's own rate limit almost immediately;
-	// this only actually fires once typing pauses.
 	funds_requested: frappe.utils.debounce(function (frm) {
 		case_register_validate_currency(frm, "funds_requested");
 		if (!frm.doc.requestor_email) return;
@@ -476,11 +370,6 @@ frappe.ui.form.on("Case Register", {
 	},
 
 	refresh(frm) {
-		// A brand-new case's own primary action still says "Save as
-		// Draft" instead of Frappe's default "Save" label — case_status
-		// really does default to Draft (see case_register.json), so this
-		// just names what actually happens instead of leaving it
-		// implicit.
 		if (frm.is_new()) {
 			apply_save_as_draft_label(frm);
 		}
@@ -492,32 +381,12 @@ frappe.ui.form.on("Case Register", {
 		apply_insurance_visibility(frm, frm.doc.insurance_type);
 		apply_verification_visibility(frm, frm.doc.physical_verification);
 
-		// case_approval_stage is read_only:1 on the doctype itself (a UI
-		// property only — not a real permission, so this can't be used to
-		// actually block a write server-side) so it's read-only for
-		// everyone by default: Requester, Support IID Approver, and
-		// anyone else. Reviewer and System Manager are the two roles that
-		// legitimately drive this table directly, so their forms
-		// override it back to editable here. It's deliberately NOT set
-		// via permlevel (Frappe silently resets ANY permlevel>0 field —
-		// Table fields included — back to empty for a role without write
-		// access at that level on every save, which was actually wiping
-		// every approval-stage row a Requester saved, and is why the
-		// approver was never getting notified).
 		var current_roles = frappe.user_roles || [];
 		var can_edit_approval_stage =
 			current_roles.includes("Support IID Reviewer") || current_roles.includes("System Manager");
 		frm.set_df_property("case_approval_stage", "read_only", can_edit_approval_stage ? 0 : 1);
 		frm.refresh_field("case_approval_stage");
 
-		// A freshly-saved case sits in "Draft" (the field's own default —
-		// see case_register.json) until someone explicitly submits it. Once
-		// it's been saved at least once, swap the default Save button for a
-		// single "Submit" primary action instead — Save stays hidden the
-		// whole time it's Draft, since there's nothing meaningful to "save"
-		// beyond what Submit itself already re-validates and persists.
-		// (A brand-new, not-yet-saved doc keeps the normal Save button so it
-		// can be saved into Draft in the first place.)
 		apply_requester_post_submit_view(frm);
 		apply_approver_read_only_view(frm);
 		apply_approver_action_button(frm);
@@ -532,14 +401,6 @@ frappe.ui.form.on("Case Register", {
 		apply_draft_resave_toggle(frm);
 	},
 
-	// Re-runs every inline check above right before save (not just
-	// mandatory documents — mirrors validateMandatoryDocuments() in
-	// support_iid_case_registration.js) so a bad value that never
-	// triggered its own field's change event — pre-filled by the Graph
-	// API auto-fill, or pasted then saved without blurring — still gets
-	// caught here instead of only by case_register.py's validate(),
-	// which would otherwise surface it as a popup dialog instead of the
-	// same inline field message these checks already show.
 	validate(frm) {
 		var all_valid = true;
 
@@ -576,27 +437,8 @@ frappe.ui.form.on("Case Register", {
 	},
 });
 
-// Frappe's own Toolbar binds a "dirty" listener (add_update_button_on_dirty,
-// frappe/public/js/frappe/form/toolbar.js) that reasserts its own default
-// "Save" primary action on EVERY field change, not just once at page
-// load — so setting the label once in refresh() got silently reverted
-// the moment the user touched any field. jQuery runs same-event
-// handlers in bind order, and the toolbar's own listener is already
-// bound (in its constructor, which runs before this form's own scripts
-// ever see a "refresh" trigger) by the time this binds — so binding here
-// runs SECOND on every "dirty" event and wins, keeping the custom label
-// in place through every keystroke instead of only the very first
-// render.
 function apply_save_as_draft_label(frm) {
 	frm.page.set_primary_action(__("Save as Draft"), () => frm.save());
-	// frm.wrapper is NOT a jQuery object (it's the raw Page wrapper
-	// element) — frm.$wrapper is the pre-wrapped jQuery version Frappe
-	// itself keeps alongside it (frm.$wrapper = $(frm.wrapper), see
-	// frappe/public/js/frappe/form/form.js) and the same element
-	// dirty() itself dispatches "dirty" on, so binding here has to go
-	// through $wrapper too — calling .data()/.on() straight on
-	// frm.wrapper would throw (no such method on a plain object),
-	// silently breaking everything below this line every single render.
 	if (frm.$wrapper.data("case-register-save-label-guard")) return;
 	frm.$wrapper.data("case-register-save-label-guard", true);
 	frm.$wrapper.on("dirty", function () {
@@ -606,22 +448,6 @@ function apply_save_as_draft_label(frm) {
 	});
 }
 
-// Once a Draft case has already been saved once, refresh() replaces Save
-// with a single "Submit" primary action (see above) so an untouched
-// Draft can only move forward via the full submit-to-approval flow. But
-// if the user then edits a field, they need a way to just persist that
-// edit without re-triggering that flow (and its approver/requestor
-// emails) on every keystroke's worth of change. Swap the primary action
-// back to a plain Save the moment the form goes dirty; refresh() runs
-// again after save() reloads the doc and restores "Submit" once the
-// form is clean.
-//
-// The "Not Saved" title indicator is set the same way, explicitly,
-// rather than relying on Frappe's own toolbar.show_title_as_dirty() —
-// that core method no-ops whenever frm.save_disabled is true (see
-// toolbar.js), which disable_save() above sets permanently for this
-// doctype's Draft state, so the built-in indicator would otherwise
-// never flip away from "Draft" no matter how dirty the form got.
 function apply_draft_resave_toggle(frm) {
 	if (frm.$wrapper.data("case-register-draft-resave-guard")) return;
 	frm.$wrapper.data("case-register-draft-resave-guard", true);
@@ -651,10 +477,6 @@ function apply_verification_visibility(frm, value) {
 	frm.refresh_field("physical_verification_notes");
 }
 
-// Mirrors applyRequestTypeLabels() in support_iid_case_registration.js —
-// Hospital/Institution/Ailment relabel to match whether this is a
-// Medical or Education request, and Treatment (only meaningful for a
-// Medical request) shows/hides + becomes mandatory/optional accordingly.
 function apply_request_type_labels(frm, value) {
 	if (value === "Medical") {
 		frm.set_df_property("hospital_institution_name", "label", __("Hospital Name"));
@@ -683,10 +505,6 @@ function apply_request_type_labels(frm, value) {
 	);
 }
 
-// Mirrors markMandatoryDocumentRows() in support_iid_case_registration.js —
-// a subtle left border + background tint on a supporting_documents grid
-// row whose document is mandatory, since the grid has no built-in
-// per-row conditional-mandatory styling for a plain Link column.
 function mark_mandatory_document_rows(frm) {
 	var grid = frm.fields_dict.supporting_documents && frm.fields_dict.supporting_documents.grid;
 	if (!grid || !grid.grid_rows) return;
@@ -703,26 +521,6 @@ function mark_mandatory_document_rows(frm) {
 	});
 }
 
-// A supporting_documents row's attachment shows up as a plain download
-// link in TWO different places, each with its own markup — neither offers
-// any in-app preview on its own:
-//   - the collapsed grid table's own "Attachment" column, formatted by
-//     Frappe's generic format_attachment_url as a bare
-//     <a href target="_blank"> inside that column's .static-area (see
-//     frappe/public/js/frappe/form/formatters.js) — this is what's
-//     actually visible without opening a row, so it's the one place a
-//     preview button HAS to live to be discoverable at all;
-//   - a row's own expanded field view, once you click into it, which
-//     instead renders <a class="attached-file-link" target="_blank">
-//     (see frappe/public/js/frappe/form/controls/attach.js).
-// Both are intercepted here (delegated off the grid's own wrapper, which
-// is stable across every grid re-render — a plain per-row binding would
-// need re-attaching on every add/remove/sort) and open
-// case_register_open_document_preview instead, with the "open in a new
-// tab" behavior still one click away inside that preview's own footer.
-// The collapsed-column case also needs stopPropagation: that whole
-// column has its own click handler that expands the row into edit mode
-// (see grid_row.js), which would otherwise fire right alongside this.
 function setup_supporting_document_preview(frm) {
 	var grid = frm.fields_dict.supporting_documents && frm.fields_dict.supporting_documents.grid;
 	if (!grid || !grid.wrapper || grid.wrapper.data("siid-preview-bound")) return;
@@ -751,13 +549,6 @@ function setup_supporting_document_preview(frm) {
 	});
 }
 
-// Same file-type handling as case_registry.js's open_document_modal
-// (image/PDF/video/audio/text rendered natively; Office docs via the
-// vendored SIIDOfficePreview; anything else falls back to a download
-// link) — reimplemented here on this form's own custom-modal styling
-// (case_register_open_modal's visual language) instead of copying the
-// Case Registry page's .cl-modal CSS classes, which this file doesn't
-// define at all.
 function case_register_open_document_preview(url, name) {
 	var ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
 	var body;
@@ -819,12 +610,6 @@ function case_register_open_document_preview(url, name) {
 			"</a></div>";
 	}
 
-	// Not built via case_register_open_modal — that helper is tuned for
-	// narrow form-field dialogs (Approve/Send Back/Withdraw, ~520px),
-	// while a document preview needs a wide, near-full-height body for
-	// an iframe/image/video to actually be usable. Same overlay/card
-	// visual language (blurred backdrop, rounded white card, Escape and
-	// backdrop-click to close) as that helper, just sized differently.
 	var overlay = document.createElement("div");
 	overlay.style.cssText =
 		"position:fixed;inset:0;z-index:100000;background:rgba(20,26,32,.45);" +
@@ -874,9 +659,6 @@ function case_register_open_document_preview(url, name) {
 	overlay.querySelector(".cr-doc-preview-close").addEventListener("click", close_preview);
 
 	if (needs_office_render) {
-		// Scoped to THIS overlay's own DOM (not a global id lookup) so a
-		// second preview opened before this one closes can never target
-		// the wrong status placeholder.
 		var $status = $(overlay).find("#cr-doc-convert-status");
 		window.SIIDOfficePreview.render($status.parent(), url, ext).catch(function (err) {
 			$status.html(
@@ -894,35 +676,6 @@ function case_register_open_document_preview(url, name) {
 	}
 }
 
-// Uploaded supporting documents can carry sensitive personal/medical
-// information — every one of them should always be private, with no
-// "make public" affordance offered to whoever's attaching it. The
-// Attach control's set_upload_options() (frappe/public/js/frappe/form/
-// controls/attach.js) does `Object.assign(options, this.df.options)`
-// when this.df.options is set — but a Table field's rows each build
-// their OWN separate copy of the child doctype's fields (GridRow.
-// set_docfields() -> frappe.meta.get_docfields(), cached per ROW NAME
-// in frappe.meta.docfield_copy, not shared with grid.docfields at all)
-// — so mutating grid.docfields itself never reaches any row's actual
-// rendered Attach control. Has to walk each existing row's own control
-// (grid_row.on_grid_fields_dict) directly, plus the grid-level
-// docfields template (for rows added afterward, whose set_docfields()
-// copies from it) to cover new rows without re-running this per row.
-// Patches every place an "attachment" docfield object can independently
-// live for this grid: grid.docfields (the grid-level column template),
-// grid_row.docfields (each ROW's own SEPARATE copy — GridRow.set_docfields()
-// builds this via frappe.meta.get_docfields()/get_docfield_copy(), cached
-// per row NAME, entirely independent of grid.docfields — see setup_columns()
-// in frappe/public/js/frappe/form/grid_row.js, which reads column.df from
-// THIS copy, not the grid's), and grid_row.on_grid_fields_dict.attachment
-// (the actual live Control instance, but populated LAZILY only once that
-// row's cell has been focused/rendered at least once — make_control() in
-// grid_row.js — so a row that was never yet clicked into won't have this
-// key at all when refresh() runs). Missing any one of these three still
-// leaves an unpatched df somewhere a real upload dialog can be opened
-// from — which is exactly why this kept resurfacing under different
-// timing (e.g. a slower Graph API round-trip on a production/cloud
-// deployment adding rows well after the very first refresh() already ran).
 function _case_register_patch_attachment_df(df) {
 	if (df) df.options = { make_attachments_public: 0, allow_toggle_private: false };
 }
@@ -950,32 +703,18 @@ function force_private_attachments(frm) {
 		});
 	}
 
-	// case_document (the auto-generated case-summary PDF) is already
-	// forced private server-side (_generate_and_save_pdf) and is
-	// permlevel-2 (Reviewer/System Manager only) — hides the same
-	// toggle here too in case either of them ever manually re-attaches it.
 	var case_document_field = frm.get_field("case_document");
 	if (case_document_field) _case_register_patch_attachment_df(case_document_field.df);
 }
 
-// ── Inline field-error display ───────────────────────────────────────────
-// Same DOM pattern as fieldError/clearFieldError in
-// support_iid_case_registration.js (the guest web form) — a small message
-// appended under the field's own wrapper plus a red input border, instead
-// of Frappe's default popup dialog for a frappe.throw from the server.
 const _CASE_REGISTER_EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const _CASE_REGISTER_MOBILE_RE = /^(\+91[\-\s]?)?[6-9]\d{9}$/;
 const _CASE_REGISTER_CURRENCY_RE = /^\d*\.?\d*$/;
 const _CASE_REGISTER_PINCODE_RE = /^\d{6}$/;
 const _CASE_REGISTER_OFFICIAL_DOMAIN = "azimpremjifoundation.org";
-// Letters, spaces, and the usual name punctuation — no digits. Mirrors
-// _NAME_RE in case_register.py.
 const _CASE_REGISTER_NAME_RE = /^[A-Za-z .'-]+$/;
 const _CASE_REGISTER_NAME_FIELDS = ["beneficiary_name", "requestor_name", "primary_contact_person"];
 
-// Support IID Settings.enforce_email_domain_validation — fetched once and
-// cached; defaults to true (current behavior) until the real value comes
-// back, matching the guest web form's own fetch-once-and-cache pattern.
 var _case_register_enforce_email_domain = true;
 frappe.call({
 	method:
@@ -1016,15 +755,6 @@ function case_register_clear_field_error(frm, fieldname) {
 	wrapper.find("input, select, textarea").css({ "border-color": "" });
 }
 
-// Every case_register_validate_* helper below returns true/false (valid
-// or not) as well as showing/clearing the inline field message, so
-// validate(frm) can call them all again right before save and block a
-// bad value from ever reaching the server — where the same check exists
-// again in case_register.py's validate(), but only as a frappe.throw
-// popup. Without this, a value nobody re-triggered the field's own
-// change event for (e.g. pre-filled by the Graph API auto-fill, or
-// pasted then saved without blurring) would sail past every per-field
-// handler above and only get caught by that popup.
 function case_register_validate_email(frm, fieldname) {
 	var value = (frm.doc[fieldname] || "").trim();
 	if (!value) {
@@ -1035,9 +765,6 @@ function case_register_validate_email(frm, fieldname) {
 		case_register_field_error(frm, fieldname, __("Please enter a valid email address."));
 		return false;
 	}
-	// Domain restriction (requestor_email only — never applies to
-	// approver_email in the Case Approval Stage table), same as the
-	// guest web form's debouncedEmailHandler.
 	if (fieldname === "requestor_email" && _case_register_enforce_email_domain) {
 		var domain = (value.split("@")[1] || "").toLowerCase();
 		if (domain !== _CASE_REGISTER_OFFICIAL_DOMAIN) {
@@ -1114,15 +841,6 @@ function case_register_validate_dob(frm) {
 	return true;
 }
 
-// Once a Requester's own case has left Draft, the whole form becomes a
-// read-only record for them — there's no "edit and re-save" path once
-// it's out for approval; the only thing they can still do is Withdraw
-// it (see withdraw_case_from_desk) or, once an approver Sends it Back,
-// use the emailed edit-and-resubmit link (a separate, token-based flow
-// that doesn't go through this Desk form at all). Reviewer, System
-// Manager, and Support IID Approver all keep normal edit access — this
-// only locks the form down for someone whose ONLY relevant role is
-// Requester.
 function apply_requester_post_submit_view(frm) {
 	var roles = frappe.user_roles || [];
 	var is_requester_only =
@@ -1133,16 +851,6 @@ function apply_requester_post_submit_view(frm) {
 
 	if (!is_requester_only || frm.doc.case_status === "Draft" || frm.is_new()) return;
 
-	// Sent Back is the one non-Draft status a Requester can still EDIT —
-	// that's the whole point of being sent back: fix something and
-	// resubmit, straight from this form (a Desk record link now, not a
-	// separate token+OTP web form — see _send_requestor_notification_email).
-	// Mirrors the Draft flow exactly: the normal Save button stays
-	// available for saving edits-in-progress, and "Resubmit Case" is
-	// the Submit-equivalent primary action. Withdraw is deliberately
-	// NOT offered here — while actively revising, the only forward
-	// action is to fix and resubmit; withdrawing becomes available
-	// again once the case is back to Pending Approval, below.
 	if (frm.doc.case_status === "Sent Back") {
 		frm.page.set_primary_action(__("Resubmit Case"), () => resubmit_case_dialog(frm));
 		return;
@@ -1151,23 +859,12 @@ function apply_requester_post_submit_view(frm) {
 	frm.disable_save();
 	frm.disable_form();
 
-	// Final Verification is also still withdrawable — nothing final has
-	// actually happened to the case at that point, it's only awaiting
-	// the Reviewer's own sign-off, same reasoning as _do_withdraw_case
-	// accepting CASE_STATUS_FINAL_VERIFICATION server-side now too (see
-	// case_register.py).
 	if (frm.doc.case_status === "Pending Approval" || frm.doc.case_status === "Final Verification") {
 		frm.page.set_primary_action(__("Withdraw Case"), () => withdraw_case_from_desk_dialog(frm));
 	}
 }
 
 function resubmit_case_dialog(frm) {
-	// A comment explaining what changed since Send Back — required, since
-	// the approver re-reviewing this case has no other way to know what
-	// was actually fixed without re-diffing every field themselves. Goes
-	// out in the re-approval email's "Previous stage" line (see
-	// resubmit_case_from_desk -> _resubmit_after_send_back ->
-	// _send_approval_request_email's previous_comments).
 	case_register_open_modal({
 		title: __("Resubmit Case"),
 		message: __("Resubmit this case to the approver? Save any edits first if you haven't already."),
@@ -1207,15 +904,6 @@ function resubmit_case_dialog(frm) {
 	});
 }
 
-// An Approver (Support IID Approver, and no broader role) never edits a
-// case directly — they only ever act on it via the Take Action dialog
-// (Approve/Send Back/Decline + comment), which calls process_case_approval
-// straight away rather than going through a form save. So the whole form
-// is locked read-only for them, on every case they can see (current
-// stage or one they already acted on — see get_permission_query_conditions/
-// has_permission), regardless of case_status. disable_form() only
-// affects field editability + the Save button, not frappe.call, so Take
-// Action itself keeps working normally on a fully read-only form.
 function apply_approver_read_only_view(frm) {
 	var roles = frappe.user_roles || [];
 	var is_approver_only =
@@ -1252,23 +940,6 @@ function withdraw_case_from_desk_dialog(frm) {
 	});
 }
 
-// frappe.session.user / frappe.user_roles are populated once at page
-// load and then live in memory for as long as the tab stays open — a
-// browser tab left open on a case form does NOT pick up a subsequent
-// login/logout that happens in another tab (or in the same tab via
-// back/forward-cache navigation) sharing the same browser session.
-// That leaves a window where the visible "current user" the button
-// logic reasons about is stale relative to the session cookie actually
-// sent on the next request — harmless for the server-side check in
-// process_case_approval (which reads the live session and correctly
-// rejects), but confusing: a button appears, the user fills in the
-// dialog, and only then gets "You are not the designated approver for
-// the current stage." This re-checks the logged-in user against the
-// server immediately before either showing the action button or
-// opening its dialog, so a stale tab corrects itself (a fresh
-// frm.reload_doc() re-runs every refresh handler, redrawing the button
-// or hiding it under the now-current identity) instead of dead-ending
-// the user in a dialog that was never going to succeed.
 function case_register_resync_if_session_stale(frm, then) {
 	frappe.call({
 		method: "frappe.auth.get_logged_user",
@@ -1285,40 +956,6 @@ function case_register_resync_if_session_stale(frm, then) {
 	});
 }
 
-// frappe.user_roles is the OTHER half of the same staleness problem
-// case_register_resync_if_session_stale handles for frappe.session.user
-// — both are populated once, from frappe.boot, at page load (see
-// set_globals() in frappe/public/js/frappe/desk.js) and never refreshed
-// for the rest of that tab's life. A role granted to the SAME
-// still-logged-in user mid-session (e.g. someone is freshly given
-// Support IID Reviewer while their Desk tab has been open since before
-// that) leaves frappe.user_roles permanently missing it in that tab.
-//
-// This is NOT just a button-visibility problem — every permlevel>0
-// field on this doctype (Milaap campaign link/recommendation at
-// permlevel 1; the whole Closure of case section — approved_amount,
-// utr_details, refund_amount_if_any, status_of_milaap_transfer,
-// date_of_transfer — at permlevel 2) is hidden or shown per-field by
-// frappe.perm.get_perm, which itself reads frappe.user_roles (see
-// get_role_permissions in frappe/public/js/frappe/model/perm.js) AND
-// memoizes its result per doctype for the rest of the tab's life
-// (frappe.perm.doctype_perm[doctype] ??= ...) — so even a role that
-// WAS current at the very first page load, before Reviewer was
-// granted, gets that one first computation cached forever, same as
-// frappe.user_roles itself. So a Reviewer whose tab predates being
-// granted that role doesn't just miss the Final Verification button —
-// they see a form silently missing every closure/Milaap field a
-// Reviewer needs, until they figure out to hard-refresh.
-//
-// Runs proactively on every refresh (not gated to a single
-// case_status — the closure fields specifically matter on an Approved
-// case, not just Pending Approval): if the live DB roles differ from
-// what's cached, patch frappe.user_roles, clear the memoized perm
-// cache for this doctype so it's recomputed against the corrected
-// roles, and re-run refresh() so every downstream visibility check —
-// button AND field — sees the fix. A plain reload_doc() would refetch
-// the document but not any of this, since none of it is part of what
-// that call touches.
 function case_register_resync_stale_roles(frm) {
 	if (frm.is_new()) return;
 	if (frappe.session.user === "Administrator") return;
@@ -1341,34 +978,11 @@ function case_register_resync_stale_roles(frm) {
 			if (frappe.perm && frappe.perm.doctype_perm) {
 				delete frappe.perm.doctype_perm[frm.doctype];
 			}
-			// reload_doc(), not refresh() — refresh() alone re-renders
-			// using frm.doc exactly as it already sits in
-			// frappe.model.locals (the client's in-memory doc cache),
-			// which is a SEPARATE staleness problem from the roles fix
-			// above: this tab's copy of the case can itself predate the
-			// case actually reaching Final Verification (or any other
-			// state change), same as the roles being stale predates the
-			// role grant. Patching frappe.user_roles and only calling
-			// refresh() would still evaluate apply_reviewer_final_approval_
-			// button's `current_approval_level !== "Final Verification"`
-			// check against that old snapshot and correctly (from its own
-			// point of view) keep the button hidden — reload_doc() re-fetches
-			// the real document from the server first, and itself calls
-			// refresh() once that lands, so both halves of the staleness
-			// are corrected together.
 			frm.reload_doc();
 		},
 	});
 }
 
-// Shows a "Take Action" primary button — Approve / Send Back / Decline,
-// with an optional comment — for whoever's actually allowed to act on
-// the case's CURRENT pending approval stage: the exact approver_email
-// on that stage, or anyone with the Support IID Approver role, or
-// System Manager/Administrator (mirrors the permission check
-// process_case_approval itself already enforces server-side — this is
-// only what decides whether to SHOW the button; the real gate is still
-// that server-side check on every actual call).
 function apply_approver_action_button(frm) {
 	if (frm.is_new() || frm.doc.case_status !== "Pending Approval") return;
 
@@ -1383,15 +997,6 @@ function apply_approver_action_button(frm) {
 	}
 	if (!current_stage) return;
 
-	// Support IID Approver on its own is NOT enough to show this button —
-	// that role is held by every approver across every level/case, so
-	// checking only the role would show "Take Action" to level-2/3
-	// approvers on a case that's still waiting on level 1. Only the
-	// exact approver_email on the CURRENT stage (or System
-	// Manager/Administrator, as an override) gets it — matches the same
-	// current-stage-only visibility get_permission_query_conditions /
-	// has_permission already enforce for whether the case is visible at
-	// all (see case_register.py).
 	var roles = frappe.user_roles || [];
 	var user = frappe.session.user;
 	var approver_email = (current_stage.approver_email || "").trim().toLowerCase();
@@ -1437,24 +1042,6 @@ function take_action_dialog(frm, current_stage) {
 	dialog.show();
 }
 
-// Shows a "Final Verification" primary button once every Case Approval
-// Stage level has approved — case_status is its own distinct value,
-// CASE_STATUS_FINAL_VERIFICATION ("Final Verification", same literal as
-// CASE_APPROVAL_LEVEL_REVIEWER, see case_register.py), set by
-// process_case_approval's own final-stage branch once nothing's left
-// pending in the ordinary chain. Checking case_status alone (rather than
-// case_status === "Pending Approval" && current_approval_level ===
-// "Final Verification", the old two-field combination) is deliberate:
-// current_approval_level is a plain Data field with no permission of its
-// own guaranteed to survive every serialization path exactly the same
-// way case_status (the doctype's actual status field) does, so relying
-// on it alone for something this consequential — whether a Reviewer
-// even sees the button that lets them act at all — was a real risk
-// worth removing once a dedicated status made it possible to. Any
-// Support IID Reviewer/System Manager/Administrator can act — this is a
-// role-based gate here, not a per-case assignment, so there's no
-// approver_email to match against like apply_approver_action_button
-// does for ordinary stages.
 function apply_reviewer_final_approval_button(frm) {
 	if (frm.is_new()) return;
 	if (frm.doc.case_status !== "Final Verification") return;
@@ -1471,18 +1058,6 @@ function apply_reviewer_final_approval_button(frm) {
 	);
 }
 
-// Frappe's own toolbar sets the title-bar status badge automatically
-// from case_status alone (frappe.get_indicator(frm.doc), called from
-// Toolbar.refresh() as part of core's refresh_header() — runs BEFORE
-// this doctype's own refresh(frm) trigger, so a set_indicator call here
-// correctly overrides it). case_status now has its own dedicated
-// CASE_STATUS_FINAL_VERIFICATION value ("Final Verification" — see
-// case_register.py), so the default indicator would already show that
-// literal Case Status List value correctly on its own; this only swaps
-// in the friendlier "Pending with Reviewer" wording, matching the same
-// CASE_STATUS_DISPLAY_LABELS relabeling case_register.py already
-// applies server-side (emails, the case-summary PDF) for this exact
-// status, and for Sent Back ("Pending with Requester").
 function apply_case_status_indicator(frm) {
 	if (frm.is_new()) return;
 	if (frm.doc.case_status === "Final Verification") {
@@ -1491,12 +1066,6 @@ function apply_case_status_indicator(frm) {
 }
 
 function reviewer_final_approval_dialog(frm) {
-	// Same frappe.ui.Dialog pattern as take_action_dialog (an ordinary
-	// approval stage) — Approve / Send Back only, no Decline: unlike an
-	// ordinary stage, the Reviewer's final verification is a check on a
-	// case every level has already approved, so an outright rejection at
-	// this point isn't offered here — Send Back covers "something's not
-	// right, fix and resubmit" the same way it does for any other stage.
 	var dialog = new frappe.ui.Dialog({
 		title: __("Final Verification"),
 		fields: [
@@ -1531,12 +1100,6 @@ function submit_draft_case(frm) {
 		__("Submit this case? It will move to Pending Approval and the approver/requestor emails will be sent."),
 		__("I confirm the information in this case is accurate to the best of my knowledge."),
 		function () {
-			// submit_case reads the case straight from the DB, not from
-			// whatever's currently sitting unsaved in the browser — any
-			// pending edit (e.g. a Graph re-fetch that filled the
-			// approval stage table right before the user clicked Submit)
-			// needs to actually land in the DB first, or it's silently
-			// lost the moment the server loads its own copy of the doc.
 			var do_submit = function () {
 				case_register_call_with_loader({
 					method: "support_iid.support_iid.doctype.case_register.case_register.submit_case",
@@ -1559,16 +1122,6 @@ function submit_draft_case(frm) {
 	);
 }
 
-// Shown once, right after a Draft case is actually submitted — the form
-// underneath is already reloaded (locked read-only, Pending Approval —
-// see apply_requester_post_submit_view) by the time this appears, so
-// dismissing it just reveals that same locked record. The point isn't
-// to gate anything (submit_case's own "only a Draft case can be
-// submitted" check already makes a real double-submit impossible) —
-// it's to give the requestor an unmistakable "you're done, here's your
-// case ID" moment instead of the form just quietly re-rendering, so
-// they don't go open a fresh New Case Register for the same request
-// thinking the first attempt didn't go through.
 function case_register_show_submission_success(case_name) {
 	var overlay = document.createElement("div");
 	overlay.style.cssText =
@@ -1618,10 +1171,6 @@ function case_register_show_submission_success(case_name) {
 	overlay.querySelector(".cr-submit-success-done").addEventListener("click", close);
 }
 
-// Same AES-GCM key/scheme as the guest web form's decryptPayload (see
-// support_iid_case_registration.js) — get_employee_details always
-// encrypts its response regardless of caller, guest or logged-in Desk
-// user, so this Desk script needs the same decrypt step to read it.
 const CASE_REGISTER_AES_KEY_B64 = "sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=";
 
 function case_register_base64_to_bytes(b64) {
@@ -1658,20 +1207,7 @@ function case_register_strip_country_code(mobile) {
 	return cleaned.slice(-10);
 }
 
-// Mirrors fetchRequestorDetails in support_iid_case_registration.js — same
-// Microsoft Graph lookup (name/mobile/department/office_location) and the
-// same server-computed approval_stages (Approval Hierarchy match, or a
-// Graph manager-chain fallback, scaled to funds_requested), just written
-// into a real frm (Desk form) instead of a web form's field.df.data.
 function fetch_requestor_details(frm, email) {
-	// onload sets requestor_email via frm.set_value AND calls this
-	// directly — but set_value also fires the requestor_email field's own
-	// (debounced) handler, which calls this again ~800ms later with the
-	// exact same arguments. Same thing can happen from other paths that
-	// both call this directly and also change a field this same function
-	// is wired to. Guards against firing the identical (email, funds)
-	// request twice in a row, which is what was tripping Microsoft
-	// Graph's own rate limit on nothing more than opening a fresh form.
 	var funds = frm.doc.funds_requested || 0;
 	var call_key = email + "|" + funds;
 	if (frm._last_graph_fetch_key === call_key) return;
@@ -1681,10 +1217,6 @@ function fetch_requestor_details(frm, email) {
 		method: "support_iid.api.microsoft_graph.get_employee_details",
 		args: { email: email, funds_requested: funds },
 		freeze_message: __("Fetching employee details..."),
-		// Fails quietly (console only) rather than a blocking error dialog
-		// — this auto-fill is a convenience on top of a form the user can
-		// always fill in manually, same as the guest web form's own
-		// graceful-degradation behavior for this same lookup.
 		error: function (err) {
 			console.error("Employee lookup failed:", err);
 		},
@@ -1694,14 +1226,6 @@ function fetch_requestor_details(frm, email) {
 			case_register_decrypt_payload(payload)
 				.then(function (data) {
 					if (!data.exists) {
-						// transient_error (a connection reset/timeout talking to
-						// Microsoft Graph, retried once server-side and still failed
-						// — see _graph_get/get_employee_details) is worth telling the
-						// requestor about, since the fields below just silently
-						// staying blank otherwise looks like nothing happened at
-						// all. A clean "email not found" isn't an error — that's an
-						// expected outcome for an email outside the directory — so
-						// it stays quiet like before.
 						if (data.transient_error) {
 							frappe.show_alert(
 								{
@@ -1745,25 +1269,12 @@ function fill_approval_stages(frm, stages) {
 		row.approver_email = s.approver_email || "";
 	});
 	frm.refresh_field("case_approval_stage");
-	// add_child()/direct field assignment above bypasses set_value, so it
-	// never fires the model-change event frm.dirty() normally listens
-	// for — the grid visibly fills in, but the form doesn't know it has
-	// unsaved changes, and submit_case (called straight from the Submit
-	// button, which never itself calls frm.save()) would then read
-	// straight from the DB and find no approval stage rows there at all.
-	// Marked dirty explicitly, and — for a case that's already been
-	// saved at least once (funds_requested changed after the first
-	// save, re-triggering this same fetch) — saved right away so the
-	// fetched rows are never left sitting unsaved.
 	frm.dirty();
 	if (!frm.is_new()) {
 		frm.save();
 	}
 }
 
-// Mirrors loadDocumentsFor in support_iid_case_registration.js — same
-// Documents list lookup by Type of Request, matched against the child
-// table rows that declare that type.
 function load_documents_for(frm, request_type) {
 	frappe.call({
 		method:

@@ -8,12 +8,6 @@ def get_context(context):
 
 @frappe.whitelist(allow_guest=True)
 def get_email_domain_validation_setting():
-	"""Whether the requestor's own email must be on the org domain — read
-	by the web form's JS (which runs as Guest and can't call
-	frappe.db.get_single_value directly) before enforcing the
-	azimpremjifoundation.org check on the email/requestor_email fields.
-	Defaults to enabled if the setting is missing for any reason, since
-	that's the existing behavior this toggle was added to make optional."""
 	setting = frappe.db.get_single_value("Support IID Settings", "enforce_email_domain_validation")
 	return {"enforce": bool(setting) if setting is not None else True}
 

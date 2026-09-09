@@ -14,9 +14,6 @@ frappe.pages['support-iid-dashboard'].on_page_load = function (wrapper) {
 	new SupportIIDDashboard(page);
 };
 
-// ---------------------------------------------------------------
-// Constants & small helpers
-// ---------------------------------------------------------------
 
 const TERMINAL_STATUSES = ['Approved', 'Rejected', 'Closed'];
 function is_in_progress(status) {
@@ -26,19 +23,7 @@ function case_amount(c) {
 	return c.approved_amount || c.funds_requested || 0;
 }
 
-// Drill-down table column presets — which columns render depends on which
-// metric card opened the drill-down, not a single fixed set for every case
-// (e.g. Approved Amount/Approved By are always blank for a Declined-cases
-// drill-down, since a declined case never had either; a financial card's
-// drill-down should put the money columns first, not status). Each entry:
-// {field, label, sort} (sort false for the leading "#" column, which never
-// sorts). render_drilldown_row below reads `field` directly off the case
-// row except for the special-cased 'approved_amount' (uses display_amount)
-// and 'status' (uses display_status) fields.
 const DRILLDOWN_COLUMNS = {
-	// Every field the table can show, in its original default order — used
-	// whenever a card's own subject doesn't call for a narrower/reordered
-	// set (e.g. "All cases", "Cases in progress").
 	default: [
 		{ field: 'name', label: 'Case ID', sort: true },
 		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
@@ -49,9 +34,6 @@ const DRILLDOWN_COLUMNS = {
 		{ field: 'approved_by', label: 'Approved By', sort: true },
 		{ field: 'request_date', label: 'Request Date', sort: true }
 	],
-	// Financial cards (Total Requested/Pending/Approved/Declined Amount) —
-	// the money columns lead, Approved By follows since it's directly
-	// tied to the Approved Amount figure right next to it.
 	financial: [
 		{ field: 'name', label: 'Case ID', sort: true },
 		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
@@ -61,10 +43,6 @@ const DRILLDOWN_COLUMNS = {
 		{ field: 'case_status', label: 'Status', sort: true },
 		{ field: 'request_date', label: 'Request Date', sort: true }
 	],
-	// Status cards whose status can never carry an approved amount/approver
-	// (Pending Approval, Sent Back, On Hold, Withdrawn, Declined, Draft,
-	// "Other") — dropping both columns instead of showing them as a wall
-	// of "—" placeholders on every row.
 	status_no_approval: [
 		{ field: 'name', label: 'Case ID', sort: true },
 		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
@@ -73,10 +51,6 @@ const DRILLDOWN_COLUMNS = {
 		{ field: 'funds_requested', label: 'Requested Amount', sort: true, align: 'right' },
 		{ field: 'request_date', label: 'Request Date', sort: true }
 	],
-	// Approved/Closed cases specifically — Approved Amount and Approved By
-	// both have real values here, so they lead right after the requested
-	// amount instead of trailing behind Type/Status (which are redundant
-	// once every row in the list is already "Approved").
 	approved: [
 		{ field: 'name', label: 'Case ID', sort: true },
 		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
@@ -85,9 +59,6 @@ const DRILLDOWN_COLUMNS = {
 		{ field: 'approved_by', label: 'Approved By', sort: true },
 		{ field: 'request_date', label: 'Request Date', sort: true }
 	],
-	// Time/period drill-downs (Analysis chart bars, monthly breakdowns) —
-	// Request Date is the whole reason this list exists, so it leads right
-	// after the identifying columns instead of trailing at the end.
 	period: [
 		{ field: 'name', label: 'Case ID', sort: true },
 		{ field: 'beneficiary_name', label: 'Beneficiary', sort: true },
@@ -109,36 +80,14 @@ function status_color(status) {
 	if (status.indexOf('Pending Approval') === 0) return 'orange';
 	return 'blue';
 }
-// The stored case_status value stays "Sent Back"/"Final Verification"
-// (Link values, used in filters/data/comparisons everywhere) — these are
-// the places that value should actually show something friendlier to a
-// user: "Pending with Requester"/"Pending with Reviewer" instead of the
-// more passive/technical stored wording. Same relabeling
-// CASE_STATUS_DISPLAY_LABELS already applies server-side (case_register.py)
-// and case_register.js's own apply_case_status_indicator applies on the
-// Desk form — kept as a separate copy here since this dashboard has no
-// shared JS module with either of those to import from.
 const STATUS_DISPLAY_LABELS = {
 	'Sent Back': 'Pending with Requester',
-	// "Rejected" is flagged as a restricted/spam-trigger word by some
-	// outgoing-mail providers — shown as "Declined" everywhere instead
-	// (matching the wording already used for the Decline action). The
-	// stored case_status value stays "Rejected" for data/filter
-	// consistency.
 	'Rejected': 'Declined',
 	'Final Verification': 'Pending with Reviewer'
 };
 function status_display_label(status) {
 	return STATUS_DISPLAY_LABELS[status] || status;
 }
-// Case Status is a fixed Link value ("Pending Approval") with the current
-// approval level tracked separately — this composes the two back into one
-// display string, e.g. "Pending Approval (L1 Reviewer)". Final Verification
-// is excluded here even though it also has a current_approval_level (the
-// same literal, "Final Verification") — appending it would just repeat
-// what "Pending with Reviewer" already says, unlike the ordinary Pending
-// Approval/Sent Back cases where the level (L1/L2/...) is genuinely new
-// information the bare status label doesn't carry on its own.
 function display_status(c) {
 	var label = status_display_label(c.case_status);
 	if ((c.case_status === 'Pending Approval' || c.case_status === 'Sent Back') && c.current_approval_level) {
@@ -151,17 +100,11 @@ const STATUS_HEX = {
 	green: '#2f9e5b', red: '#e0524c', purple: '#8a63d2'
 };
 
-// One color per year line in the Yearly comparison chart (render_year_over_year_chart) —
-// cycles if there are ever more years of data than colors.
 const YEAR_LINE_COLORS = ['#2f9e5b', '#2490ef', '#e0524c', '#a259d9', '#e6a119', '#17a2b8', '#6c757d'];
 
 const ACTION_LABEL = { 'Approve': 'Approve', 'Decline': 'Decline', 'Send Back': 'Send Back' };
 const ACTION_PAST = { 'Approve': 'approved', 'Decline': 'declined', 'Send Back': 'sent back' };
 
-// ---------------------------------------------------------------
-// Small self-contained icon set (feather-style outline icons) so
-// cards and buttons don't rely on any external icon font being loaded.
-// ---------------------------------------------------------------
 const ICON_PATHS = {
 	refresh: '<polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>',
 	clear: '<circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line>',
@@ -190,15 +133,6 @@ function icon(name, size) {
 }
 
 function get_current_stage(doc) {
-	// Only "Pending Approval" cases have a stage genuinely awaiting
-	// action. Any other case_status (Sent Back, Rejected,
-	// Approved, On Hold, Closed) means no approver should see a Take Action button —
-	// even though a LATER stage's own row may still carry a blank status
-	// simply because it was never reached yet (e.g. stage 3 when the
-	// case was sent back at stage 1). Without this check, scanning stage
-	// rows alone would incorrectly treat that untouched later stage as
-	// "current" and show Take Action on a case that isn't actually
-	// awaiting any approver right now.
 	if (doc.case_status !== 'Pending Approval') return null;
 
 	var stages = doc.case_approval_stage || [];
@@ -239,17 +173,8 @@ function period_label(key, granularity) {
 	return key;
 }
 
-// ---------------------------------------------------------------
-// Free public dataset of Indian states & districts, used to populate
-// the District/State filters as real dropdowns instead of free text.
-// Loaded once and cached; falls back to plain text filtering if the
-// fetch fails (network/CORS), so the filters still work either way.
-// ---------------------------------------------------------------
 const INDIA_LOCATION_URL = 'https://raw.githubusercontent.com/sab99r/Indian-States-And-Districts/master/states-and-districts.json';
 
-// ---------------------------------------------------------------
-// Dashboard
-// ---------------------------------------------------------------
 class SupportIIDDashboard {
 	constructor(page) {
 		this.page = page;
@@ -653,12 +578,6 @@ class SupportIIDDashboard {
 				this.render_metrics();
 			});
 
-		// No longer a filter dropdown — Status is shown as one Case
-		// Overview card per status instead (see render_metrics), so this
-		// only needs the plain list of status names for that. "Draft"
-		// is excluded defensively even though nothing currently creates a
-		// case in that status — a card for it would be meaningless (no
-		// case is ever left sitting there for a user to act on).
 		frappe.db.get_list('Case Status List', { fields: ['name'], limit_page_length: 0 })
 			.then((rows) => {
 				this.case_statuses = (rows || [])
@@ -674,18 +593,11 @@ class SupportIIDDashboard {
 					sel.append(`<option value="${frappe.utils.escape_html(r.name)}">${frappe.utils.escape_html(r.name)}</option>`);
 				});
 
-				// Cached in case anything else needs the known-sources list —
-				// built from whatever entries actually exist in this master
-				// doctype, not a hardcoded list, so a new source added here
-				// shows up automatically.
 				this.request_sources = (rows || []).map((r) => r.name);
 				this.render_metrics();
 			});
 	}
 
-	// Frappe's own Date control — guarantees the site's configured date
-	// format (dd-mm-yyyy for this deployment) instead of the browser's
-	// native <input type="date"> locale formatting, which we can't control.
 	setup_date_controls() {
 		var self = this;
 		this.from_control = frappe.ui.form.make_control({
@@ -705,10 +617,6 @@ class SupportIIDDashboard {
 		this.upto_control.$input.on('change', () => self.apply_filters());
 	}
 
-	// Loads a free public India states/districts dataset to turn the
-	// State/District filters into real dropdowns. If the fetch fails
-	// (offline, blocked, etc.) the dropdowns just stay at "All ..." —
-	// filtering still works, it just won't offer suggestions.
 	load_location_data() {
 		var self = this;
 		fetch(INDIA_LOCATION_URL)
@@ -796,23 +704,12 @@ class SupportIIDDashboard {
 		var rows = this.rows;
 		var self = this;
 
-		// Approved Amount totals every case that has actually cleared
-		// approval — both cases still sitting at Approved (awaiting
-		// disbursement/closure) and cases that have since been Closed —
-		// not just the ones still in the Approved state.
 		var approved_rows = rows.filter((c) => c.case_status === 'Approved' || c.case_status === 'Closed');
 		var declined_rows = rows.filter((c) => c.case_status === 'Rejected');
-		// Final Verification cases are still awaiting a decision too — every
-		// ordinary approval level passed, but the Support IID Reviewer's own
-		// sign-off hasn't happened yet, so they belong in this count exactly
-		// like an ordinary Pending Approval case does.
 		var pending_rows = rows.filter((c) => c.case_status === 'Pending Approval' || c.case_status === 'Final Verification');
 		var total_approved_value = approved_rows.reduce((s, c) => s + case_amount(c), 0);
 		var total_requested_value = rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
 		var total_declined_value = declined_rows.reduce((s, c) => s + case_amount(c), 0);
-		// Cases still awaiting a decision have no approved_amount yet —
-		// this totals what's actually been requested, not case_amount()'s
-		// approved-amount-first fallback (which would always be 0 here).
 		var total_pending_value = pending_rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
 		var in_progress_rows = rows.filter((c) => is_in_progress(c.case_status));
 
@@ -839,20 +736,9 @@ class SupportIIDDashboard {
 			}
 		];
 
-		// Source of Request and Type of Request are filter dropdowns above
-		// instead of their own cards — this section leads with Total Cases /
-		// Cases In Progress, then one card per status actually in Case
-		// Status List, plus a catch-all "Others" for any case whose
-		// case_status doesn't match a known status (blank, legacy, or a
-		// stray value) — adding a new status there is enough to get a
-		// matching card, no code change needed.
 		var status_list = (this.case_statuses && this.case_statuses.length) ? this.case_statuses : [];
 		var other_rows = rows.filter((c) => status_list.indexOf(c.case_status) === -1);
 
-		// "Closed" doesn't get its own card here — it's folded into
-		// "Approved" instead, same grouping the Total Approved Amount
-		// financial card above already uses (a Closed case is just an
-		// Approved case that's since been disbursed/closed out).
 		var displayed_statuses = status_list.filter((s) => s !== 'Closed');
 
 		var status_cards = [
@@ -910,11 +796,6 @@ class SupportIIDDashboard {
 	// ---------------- Trend Analysis (Monthly / Quarterly / Yearly) ----------------
 
 	render_trend_chart() {
-		// "Yearly" isn't just one point per calendar year (that's barely a
-		// trend with only a few years of data) — it's a year-over-year
-		// comparison, same idea as a cricket run-chart comparing two
-		// innings over-by-over: month-of-year on the x-axis, one line per
-		// year, so Jan this year lines up directly under Jan last year.
 		if ((this.trend_granularity || 'month') === 'year') {
 			this.render_year_over_year_chart();
 			return;
@@ -991,11 +872,6 @@ class SupportIIDDashboard {
 		});
 	}
 
-	// Approved funds only (not case count — one metric is already plenty
-	// once it's split across several year-lines) grouped by month-of-year,
-	// one line per calendar year present in the data. Lets you read straight
-	// across, e.g. "this March" vs "last March", instead of the plain
-	// Yearly totals just scrolling further right as new years show up.
 	render_year_over_year_chart() {
 		var self = this;
 		var month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1134,11 +1010,6 @@ class SupportIIDDashboard {
 			var a = display_amount(c);
 			return a ? format_currency(a) : '—';
 		}
-		// Renders one <td> for a given column config against one case row —
-		// the two fields with dedicated display logic elsewhere in this
-		// modal (status's friendlier label, approved_amount's Approved-
-		// only fallback) are special-cased; everything else is a plain
-		// field read straight off the row.
 		function render_cell(col, c) {
 			var cls = col.align === 'right' ? ' class="sd-amount"' : '';
 			var text;

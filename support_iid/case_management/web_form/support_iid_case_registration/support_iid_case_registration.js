@@ -1,67 +1,21 @@
 frappe.ready(function () {
 
-    // Discard button removed for now (per request) — it lives in Frappe
-    // core's own web form footer template (.web-form-footer .discard-btn,
-    // see frappe/public/js/frappe/web_form/web_form.js), so it's hidden
-    // from here rather than edited there. A <style> rule (not just .hide())
-    // so it stays hidden even if the footer re-renders later in the flow.
     $('<style>.web-form-footer .discard-btn { display:none !important; }</style>').appendTo('head');
 
-    // Mandatory-document rows in the Supporting Documents grid: a subtle
-    // left border + background tint on the whole row, rather than
-    // injecting "*Required" text into the Document Name cell (which
-    // wrapped onto a second line and broke that row's alignment).
     $('<style>' +
         '.sd-mandatory-row { border-left:3px solid #c0392b; background:#fdf3f2; }' +
         '.sd-mandatory-row .row-index { cursor:help; }' +
         '</style>').appendTo('head');
 
-    /* =========================================================
-       EDIT MODE — Send-Back "edit and resubmit" flow.
-       If the URL carries ?token=..., this is a requestor editing an
-       existing case (not a fresh submission): the token + a live OTP
-       (sent to the requestor's own email) authorize applying the edits
-       via submit_case_edit, bypassing the standard guest-blocked
-       web_form.accept save path entirely.
-    ========================================================= */
 
-    // Declared up front (not inline with the Save-gating code further
-    // below) since edit-mode setup runs immediately at the top of this
-    // file and calls refreshSaveVisibility(), which reads this Set — if
-    // it were declared later in source order, that first call would see
-    // it as undefined and throw before ever reaching this line.
     var validationErrors = new Set();
 
     var editParams = new URLSearchParams(window.location.search);
     var editToken = editParams.get('token') || '';
     var editVerifyTicket = '';
 
-    // While true, field-change handlers that have side effects meant only
-    // for real user edits (Graph API lookup, resetting the supporting-
-    // documents grid to blank rows) skip those side effects — the edit-mode
-    // prefill (which only runs after OTP verification, see below) sets
-    // every field from the existing case data, including fields like
-    // requestor_email and type_of_request whose "on change" handlers would
-    // otherwise wipe or re-fetch data that's already correct.
     var isPrefilling = false;
 
-    // True for the entire lifetime of an edit-mode session (editToken
-    // present) — permanently blocks the type_of_request change handler
-    // from calling loadDocumentsFor() and wiping the Supporting Documents
-    // grid back to blank template rows, since an edited case always has
-    // real, already-uploaded documents to preserve rather than a fresh
-    // checklist to populate.
-    //
-    // isPrefilling alone can't gate this safely: frappe.model.set_value's
-    // internal field-changed event (what actually fires the
-    // on('type_of_request', ...) handler below) is dispatched
-    // asynchronously — sometime after set_value() returns, not
-    // synchronously inside it — so by the time it lands, a same-tick
-    // "isPrefilling = false" set at the end of the prefill call has
-    // already run, making a would-be isPrefilling check see `false` and
-    // let the wipe through regardless of the boolean's intent. Setting
-    // this flag once, up front, for the whole edit session sidesteps
-    // that timing race entirely instead of trying to win it.
     var caseDocumentsLoaded = !!editToken;
 
     if (editToken) {
@@ -69,18 +23,6 @@ frappe.ready(function () {
         addEditModeOtpControls();
     }
 
-    // All real case fields stay hidden/locked until OTP verification
-    // succeeds — resolve_case_for_edit (which returns the actual case
-    // data) is only called at that point, so nothing case-specific is
-    // fetched or shown before the requestor proves they hold the inbox
-    // the edit link was sent to. Hiding .web-form-body (the wrapper around
-    // every field/section) rather than toggling each field's own "hidden"
-    // property individually — Section Break "hidden" doesn't reliably
-    // collapse the fields nested under it, so per-field toggling left the
-    // form fully visible with blank inputs instead of actually hidden.
-    // The OTP entry itself is a small self-built panel (its own <input>,
-    // not the real "otp" doctype field) so it renders independently of
-    // .web-form-body and is completely unaffected by hiding it.
     function lockFormUntilVerified() {
         $('.web-form-body').hide();
         $('.web-form-footer').hide();
@@ -92,20 +34,6 @@ frappe.ready(function () {
         $('#cr-edit-otp-panel').remove();
     }
 
-    // Fills the Supporting Documents grid.
-    //
-    // Root cause of the Attach column showing blank: Grid.get_data() reads
-    // `this.frm ? this.frm.doc[fieldname] : this.df.data`. Web form field
-    // controls never get a `frm` (web forms use frappe.web_form, a
-    // FieldGroup, not a real Form) — so for every Table field on a web
-    // form, the grid actually renders from the FIELD's own `df.data`
-    // array, not from frappe.web_form.doc[fieldname]. Writing only to
-    // frappe.web_form.doc.supporting_documents (as fillApprovalStages()
-    // does) left the grid still reading its old/empty df.data underneath,
-    // which is why Document Name looked right (a stale value that
-    // happened to already be correct) while Attachment stayed blank.
-    // Fix: write the rows to df.data directly, same as Grid.add_row()
-    // does internally on its own no-frm branch.
     function fillSupportingDocuments(rows) {
         var field = frappe.web_form.fields_dict["supporting_documents"];
         var grid = field && field.grid;
@@ -133,11 +61,6 @@ frappe.ready(function () {
         caseDocumentsLoaded = true;
     }
 
-    // Fills the Family Members grid — same df.data pattern as
-    // fillSupportingDocuments/fillApprovalStages, since family_members is
-    // also a Table field and the generic set_value loop below can't
-    // populate it (web form grids render from field.df.data, not from
-    // frappe.web_form.doc[fieldname]).
     function fillFamilyMembers(rows) {
         var field = frappe.web_form.fields_dict["family_members"];
         var grid = field && field.grid;
@@ -176,15 +99,6 @@ frappe.ready(function () {
                 decryptPayload(r.message).then(function (resolved) {
                     var data = resolved.data || {};
                     unlockFormAfterVerified();
-                    // supporting_documents, case_approval_stage, and
-                    // family_members are all Table fields — handled
-                    // separately via fillSupportingDocuments/fillApprovalStages/
-                    // fillFamilyMembers, which write to field.df.data (what the
-                    // grid actually renders from in a web form) rather than just
-                    // frappe.web_form.doc[fieldname], which the generic set_value
-                    // path below uses and which the grid does NOT read from here.
-                    // Going through the generic path for these left the grid
-                    // showing stale/default rows instead of the case's real data.
                     Object.keys(data).forEach(function (fieldname) {
                         if (fieldname === 'supporting_documents' || fieldname === 'case_approval_stage' || fieldname === 'family_members') return;
                         if (data[fieldname] !== undefined && data[fieldname] !== null) {
@@ -207,10 +121,6 @@ frappe.ready(function () {
         });
     }
 
-    // Replaces the whole page body with a clear, final confirmation once
-    // the resubmit actually succeeds — no reload, no re-entering the OTP
-    // flow on a now-stale edit token, no ambiguity about whether the
-    // submit went through.
     function showResubmitSuccess(caseStatus) {
         $('.web-form-body').remove();
         $('.web-form-footer').remove();
@@ -226,10 +136,6 @@ frappe.ready(function () {
     }
 
     function addEditModeOtpControls() {
-        // Rendered as part of the form content itself (inserted right above
-        // .web-form-body, which stays hidden until verified), not a
-        // page-wide sticky overlay — so it reads as the first real step of
-        // the page, not a banner floating on top of hidden content.
         var $panel = $(
             '<div id="cr-edit-otp-panel" style="background:#fff7ed;' +
             'border:1px solid #f0c37a;border-radius:8px;padding:14px 18px;margin-bottom:20px">' +
@@ -315,9 +221,6 @@ frappe.ready(function () {
         refreshSaveVisibility();
     }
 
-    /* =========================================================
-       UTILITIES
-    ========================================================= */
 
     function debounce(fn, delay) {
         var timer;
@@ -329,14 +232,6 @@ frappe.ready(function () {
         };
     }
 
-    /* =========================================================
-       SAVE GATING — on a fresh (non-edit) submission, the Save button
-       stays visible at all times; clicking it runs the normal validate
-       flow (inline errors shown, save blocked via return false) instead
-       of the button disappearing pre-emptively while a field is invalid.
-       In edit mode, Save is still hidden until the OTP is verified —
-       there is genuinely nothing to submit yet at that point.
-    ========================================================= */
 
     function refreshSaveVisibility() {
         var $submitBtn = $('.web-form .submit-btn, .web-form-footer .submit-btn');
@@ -366,10 +261,6 @@ frappe.ready(function () {
         validationErrors.add(fieldname);
         refreshSaveVisibility();
 
-        // The message text fades after a while so it doesn't linger forever,
-        // but the red border (and the Save-button gate) stays until the
-        // field is actually re-validated as OK via clearFieldError — a
-        // faded message must never look like "this got fixed on its own".
         var t = setTimeout(function () {
             msg.fadeOut(400, function () { msg.remove(); });
         }, 15000);
@@ -389,19 +280,6 @@ frappe.ready(function () {
         refreshSaveVisibility();
     }
 
-    // Replaces Frappe's own mandatory-field check for the fresh-submission
-    // path. This is a single-page web form (no Page Break fields), so the
-    // actual gate that runs on Save is FieldGroup.get_values() (frappe/
-    // public/js/frappe/ui/field_group.js), called via `super.get_values(...)`
-    // inside WebForm.save() — which shows one popup dialog listing every
-    // missing/invalid field by label ("Missing Values Required"). `super.`
-    // calls always resolve against the prototype, so overriding
-    // frappe.web_form.get_values on the instance would NOT intercept that
-    // particular call and can't be used to fix this from here. Overriding
-    // save() itself instead lets us run the same mandatory/invalid scan
-    // ourselves first, show each problem inline under its own field (like
-    // the email/mobile/pincode checks above) instead of one popup, and only
-    // continue to the real save when everything passes.
     var original_save = frappe.web_form.save.bind(frappe.web_form);
 
     function validate_all_fields_inline() {
@@ -429,9 +307,6 @@ frappe.ready(function () {
             }
         });
 
-        // Currency fields: re-check the raw typed text (not just the
-        // already-sanitized model value) in case the debounced input
-        // handler never fired — e.g. paste-then-immediately-submit.
         currencyFieldnames.forEach(function (fieldname) {
             if (!validateCurrencyField(fieldname) && !first_invalid_fieldname) {
                 first_invalid_fieldname = fieldname;
@@ -448,22 +323,6 @@ frappe.ready(function () {
         return true;
     }
 
-    // ONE-TIME SUBMIT — a fresh (non-edit-mode) registration is a guest
-    // form: there's no logged-in identity for Frappe's own allow_multiple
-    // setting (already 0 on this web form) to dedupe against, so nothing
-    // server-side stops the SAME browser session from submitting twice.
-    // Frappe's own handle_success() already swaps in a success page after
-    // a real save, which blocks an in-place double-click — but it does
-    // nothing about the user pressing the browser Back button afterward:
-    // most browsers restore the exact pre-submit DOM from bfcache without
-    // re-running this script, landing the user right back on the filled-in
-    // form with a working Submit button, ready to create a second, separate
-    // case for the same request. alreadySubmitted below is checked at the
-    // very top of the overridden save() so a second call can never reach
-    // original_save() at all; the pageshow listener re-asserts the locked
-    // UI state specifically for the bfcache-restore case, since that
-    // doesn't re-run frappe.ready and so wouldn't otherwise see this file's
-    // own initial state again.
     var alreadySubmitted = false;
 
     function lockFormAsSubmitted() {
@@ -483,18 +342,6 @@ frappe.ready(function () {
             if (!validate_all_fields_inline()) return false;
             if (!validateMandatoryDocuments()) return false;
 
-            // Frappe's own save() (frappe/public/js/frappe/web_form/web_form.js)
-            // ALWAYS returns false synchronously — even on the real, async
-            // submit path — so the return value alone can't tell "blocked
-            // before submitting" apart from "submission under way". It does
-            // set window.saving = true right before firing the actual
-            // frappe.call, though, and only on that real path — so checking
-            // it immediately after calling save() is what actually
-            // distinguishes the two. Anything blocked earlier inside
-            // save() itself (its own mandatory-field popup, the rare field
-            // this file's own validate_all_fields_inline doesn't already
-            // cover) never sets it, and the lock is released so the user
-            // can fix the problem and try again.
             var already_saving = window.saving;
             original_save();
             if (!already_saving && !window.saving) return false;
@@ -502,15 +349,6 @@ frappe.ready(function () {
             alreadySubmitted = true;
             lockFormAsSubmitted();
 
-            // A genuine success replaces the whole page (handle_success()
-            // hides .web-form-container and shows .success-page), so this
-            // timeout is inert then — nothing left on screen to re-enable.
-            // It only matters on a real server-side failure (network error,
-            // an exception accept() throws) after the request has already
-            // gone out: window.saving flips back to false once the call
-            // settles either way, but the page itself is untouched on
-            // failure, so without this the guest would be stuck staring at
-            // a permanently disabled Submit button with no way to retry.
             setTimeout(function () {
                 if (!window.saving && $('.web-form-container').is(':visible')) {
                     alreadySubmitted = false;
@@ -524,9 +362,6 @@ frappe.ready(function () {
         };
     }
 
-    /* =========================================================
-       AES-GCM DECRYPTION
-    ========================================================= */
 
     var AES_KEY_B64 = "sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=";
 
@@ -556,9 +391,6 @@ frappe.ready(function () {
         });
     }
 
-    /* =========================================================
-       FULL-SCREEN LOADER
-    ========================================================= */
 
     function showLoader() {
         if ($('#cr-loader').length) return;
@@ -589,9 +421,6 @@ frappe.ready(function () {
         $('#cr-loader-style').remove();
     }
 
-    /* =========================================================
-       1. READ-ONLY FIELDS ON LOAD
-    ========================================================= */
 
     frappe.web_form.set_df_property('state', 'read_only', 1);
     frappe.web_form.set_df_property('district', 'read_only', 1);
@@ -604,9 +433,6 @@ frappe.ready(function () {
     // 4. Hide Department field
     frappe.web_form.set_df_property('department', 'hidden', 1);
 
-    /* =========================================================
-       2. INSURANCE COVERAGE VISIBILITY + MANDATORY
-    ========================================================= */
 
     function applyInsuranceVisibility(value) {
         var noInsurance = (!value || value === 'No Insurance');
@@ -619,9 +445,6 @@ frappe.ready(function () {
     });
     applyInsuranceVisibility(frappe.web_form.doc.insurance_type);
 
-    /* =========================================================
-       3. PHYSICAL VERIFICATION NOTES VISIBILITY
-    ========================================================= */
 
     function applyVerificationVisibility(value) {
         var show = (value === 'Yes');
@@ -636,17 +459,7 @@ frappe.ready(function () {
     });
     applyVerificationVisibility(frappe.web_form.doc.physical_verification);
 
-    /* =========================================================
-       4. TYPE OF REQUEST -> LABELS + TREATMENT MANDATORY
-    ========================================================= */
 
-    // milaap_campaign_link / milaap_recommendation are NOT fields on this
-    // web form (they're desk-only, filled in later by staff) — calling
-    // set_df_property on a fieldname this form doesn't have throws
-    // (Frappe's set_df_property has no null-guard on a missing field),
-    // which used to abort this whole handler before it reached the
-    // documents-loading call further down in the caller. Removed rather
-    // than guarded, since there's nothing here for them to actually do.
     function applyRequestTypeLabels(value) {
         if (value === 'Medical') {
             frappe.web_form.set_df_property('hospital_institution_name', 'label', 'Hospital Name');
@@ -672,14 +485,6 @@ frappe.ready(function () {
 
     frappe.web_form.on('type_of_request', function (field, value) {
         applyRequestTypeLabels(value);
-        // supporting_documents is set directly from the case's existing
-        // rows (with real attachment URLs) during edit-mode prefill —
-        // loadDocumentsFor would reset it to blank, unattached rows.
-        // caseDocumentsLoaded (not isPrefilling) is the reliable guard
-        // here: this handler fires from frappe.model.set_value's
-        // internal change event, which is dispatched asynchronously, so
-        // isPrefilling may have already flipped back to false by the
-        // time this runs even though the prefill triggered it.
         if (!caseDocumentsLoaded) {
             loadDocumentsFor(value);
         }
@@ -692,9 +497,6 @@ frappe.ready(function () {
         }
     }
 
-    /* =========================================================
-       5. PINCODE -> STATE & DISTRICT AUTO-FILL
-    ========================================================= */
 
     frappe.web_form.on('pincode', function (field, value) {
         var pin = String(value || '').trim();
@@ -724,9 +526,6 @@ frappe.ready(function () {
             });
     });
 
-    /* =========================================================
-       6. DATE OF BIRTH -> AGE AUTO-CALCULATE + FUTURE DATE BLOCK
-    ========================================================= */
 
     frappe.web_form.on('date_of_birth', function (field, value) {
         if (!value) return;
@@ -743,17 +542,10 @@ frappe.ready(function () {
         frappe.web_form.set_value('age', age);
     });
 
-    /* =========================================================
-       7. EMAIL VALIDATION + MICROSOFT GRAPH LOOKUP
-    ========================================================= */
 
     var emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     var OFFICIAL_DOMAIN = 'azimpremjifoundation.org';
 
-    // Support IID Settings.enforce_email_domain_validation — fetched once
-    // and cached; defaults to true (current behavior) until the real value
-    // comes back, so there's no brief window where the check is silently
-    // skipped while this call is in flight.
     var enforceEmailDomain = true;
     frappe.call({
         method: 'support_iid.case_management.web_form.support_iid_case_registration.support_iid_case_registration.get_email_domain_validation_setting',
@@ -791,9 +583,6 @@ frappe.ready(function () {
         var field = frappe.web_form.fields_dict["case_approval_stage"];
         var grid = field && field.grid;
         if (!grid) return;
-        // Written to field.df.data (not just frappe.web_form.doc) — see
-        // fillSupportingDocuments() for why: web form grids render from
-        // df.data, not from the parent doc.
         var built = stages.map(function (s, i) {
             return {
                 doctype: "Case Approval Stage",
@@ -831,11 +620,6 @@ frappe.ready(function () {
                 decryptPayload(payload).then(function (data) {
                     hideLoader();
                     if (!data.exists) {
-                        // transient_error means the directory lookup itself failed
-                        // (a connection reset/timeout talking to Microsoft Graph,
-                        // already retried once server-side — see get_employee_details)
-                        // — worth telling the requestor to retry, distinct from a
-                        // clean "this email isn't in the directory" result.
                         fieldError(
                             'requestor_email',
                             data.transient_error
@@ -908,9 +692,6 @@ frappe.ready(function () {
             return;
         }
 
-        // Wrong domain (requestor email only — never applies to
-        // approver_email in the Case Approval Stage table, and only
-        // applies here at all when Support IID Settings has it enabled)
         if (fieldname === 'requestor_email' && enforceEmailDomain) {
             var domain = trimmed.split('@')[1] || '';
             if (domain.toLowerCase() !== OFFICIAL_DOMAIN) {
@@ -930,19 +711,10 @@ frappe.ready(function () {
         debouncedEmailHandler('email', value);
     });
     frappe.web_form.on('requestor_email', function (field, value) {
-        // Skip during edit-mode prefill: set_value('requestor_email', ...)
-        // fires this handler with the case's own (unchanged) email, which
-        // would otherwise trigger a redundant Graph API lookup on every
-        // edit-form load. Checked here (not inside the debounced callback)
-        // since isPrefilling has already reverted to false by the time the
-        // 800ms debounce timer would run.
         if (isPrefilling) return;
         debouncedEmailHandler('requestor_email', value);
     });
 
-    /* =========================================================
-       8. MOBILE NUMBER VALIDATION
-    ========================================================= */
 
     var mobileRegex = /^(\+91[\-\s]?)?[6-9]\d{9}$/;
 
@@ -968,16 +740,6 @@ frappe.ready(function () {
         debouncedMobileHandler('primary_contact_mobile', value);
     });
 
-    /* =========================================================
-       8b. CURRENCY FIELD VALIDATION
-       Frappe's Currency control silently nulls out non-numeric input at
-       get_value()/set_value() time, but the raw text a user typed (e.g.
-       "abc123") stays visible in the input with no feedback that it was
-       rejected — so a user can believe they entered an amount that was
-       actually discarded. Checked against the DOM input directly (not
-       the already-sanitized model value) so a genuine "abc" entry is
-       caught here rather than looking like an empty/valid field.
-    ========================================================= */
 
     var currencyFieldnames = ['funds_requested', 'amount_already_spent', 'annual_family_income'];
     var currencyRegex = /^\d*\.?\d*$/;
@@ -992,11 +754,6 @@ frappe.ready(function () {
             clearFieldError(fieldname);
             return true;
         }
-        // Strip thousands-separator commas before checking — Frappe's own
-        // Currency control reformats the display value with commas after
-        // blur/change (e.g. "2,000.00"), regardless of grouping style
-        // (lakhs/crore vs. Western), so comparing the raw digits/decimal
-        // point is what actually matters here, not the separators.
         var withoutCommas = raw.replace(/,/g, '');
         if (!currencyRegex.test(withoutCommas)) {
             fieldError(fieldname, 'Please enter numbers only.');
@@ -1018,9 +775,6 @@ frappe.ready(function () {
         });
     });
 
-    /* =========================================================
-       9. TITLE + LOGO SWAP
-    ========================================================= */
 
     var titleTries = 0;
     var titleTimer = setInterval(function () {
@@ -1043,9 +797,6 @@ frappe.ready(function () {
         }
     }, 100);
 
-    /* =========================================================
-       10. SUPPORTING DOCUMENTS — LOAD BY TYPE OF REQUEST
-    ========================================================= */
 
     function loadDocumentsFor(requestType) {
         var field = frappe.web_form.fields_dict["supporting_documents"];
@@ -1059,10 +810,6 @@ frappe.ready(function () {
             args: { type_of_request: requestType },
             callback: function (r) {
                 if (!r.message) return;
-                // Written to field.df.data (not just frappe.web_form.doc) —
-                // see fillSupportingDocuments() above for why: web form
-                // grids render from df.data, not from the parent doc,
-                // since web form fields never get a real `frm`.
                 var built = r.message.map(function (doc, i) {
                     return {
                         doctype: "Case Documents",
@@ -1083,11 +830,6 @@ frappe.ready(function () {
         });
     }
 
-    // Visually flags rows whose document is mandatory — a small red
-    // "Required" label next to Document Name, since the grid itself has
-    // no built-in per-row conditional-mandatory styling for a plain Link
-    // column. Re-run after any grid refresh that could have added/changed
-    // rows (fresh load or edit-mode prefill).
     function markMandatoryDocumentRows() {
         var grid = frappe.web_form.fields_dict["supporting_documents"] &&
                    frappe.web_form.fields_dict["supporting_documents"].grid;
@@ -1096,11 +838,6 @@ frappe.ready(function () {
             var row = grid_row.doc;
             var $row_el = grid_row.row;
             if (!$row_el) return;
-            // Marked via the row's own index column + a subtle background
-            // tint, not by injecting text into the Document Name cell —
-            // that pushed the cell's own text onto a second line and threw
-            // off the whole row's alignment. This keeps every column's
-            // layout untouched; a tooltip on the index column explains it.
             $row_el.removeClass('sd-mandatory-row');
             $row_el.find('.row-index').removeAttr('title').css('font-weight', '');
             if (row && row.is_mandatory) {
@@ -1110,9 +847,6 @@ frappe.ready(function () {
         });
     }
 
-    // Mandatory-document check before submit: every row flagged
-    // is_mandatory must have an attachment, shown inline the same way as
-    // the other field-level checks on this form rather than a popup.
     function validateMandatoryDocuments() {
         var grid = frappe.web_form.fields_dict["supporting_documents"] &&
                    frappe.web_form.fields_dict["supporting_documents"].grid;
@@ -1128,28 +862,8 @@ frappe.ready(function () {
         return true;
     }
 
-    /* =========================================================
-       11. EDIT MODE — intercept save to call submit_case_edit
-          instead of the standard (guest-blocked) web_form.accept path.
-    ========================================================= */
 
     if (editToken) {
-        // Edit mode overrides the ENTIRE save() (not just validate()) so we
-        // fully control feedback to the user. Frappe's own save()
-        // (frappe/public/js/frappe/web_form/web_form.js) does:
-        //   let valid = this.validate && this.validate();
-        //   if (!valid && valid !== undefined) { frappe.msgprint("Couldn't
-        //   save, please check the data you have entered", ...); return; }
-        //   ... otherwise falls through to the real (guest-blocked) accept
-        //   save call ...
-        // There's no way to make a validate() override both (a) block that
-        // real accept call and (b) avoid the generic popup: returning
-        // `false` blocks it but always pops the message; returning
-        // `undefined` avoids the popup but lets the real accept call run
-        // underneath us, which we don't want — this whole flow exists to
-        // replace that call with submit_case_edit instead. Overriding
-        // save() itself sidesteps the trade-off: our own frappe.call is the
-        // only thing that runs, and it owns all success/error messaging.
         frappe.web_form.save = function () {
             if (!editVerifyTicket) {
                 frappe.msgprint('Please verify your email with the code sent to you before saving.');
@@ -1161,15 +875,6 @@ frappe.ready(function () {
             frappe.web_form.fields.forEach(function (df) {
                 if (!df.fieldname) return;
                 if (df.fieldtype === 'Table') {
-                    // Table fields render from field.df.data (grids mutate
-                    // that directly as the user adds/removes rows or
-                    // re-attaches a file) — frappe.web_form.doc[fieldname]
-                    // is only a snapshot taken when the grid was first
-                    // populated and goes stale the moment the user edits a
-                    // row afterward. Reading it here silently dropped any
-                    // supporting document added/replaced during the edit
-                    // session, so the resubmit email only ever carried
-                    // whatever was in the doc at load time.
                     var field = frappe.web_form.fields_dict[df.fieldname];
                     var grid = field && field.grid;
                     values[df.fieldname] = (grid && grid.get_data()) || frappe.web_form.doc[df.fieldname] || [];
@@ -1191,15 +896,6 @@ frappe.ready(function () {
                     if (!r.message) return;
                     decryptPayload(r.message).then(function (data) {
                         if (data && data.case_status) {
-                            // Reloading the same URL after this point would
-                            // re-run the whole edit-mode flow from scratch on
-                            // a token that's no longer valid for editing —
-                            // the case has already moved on, so re-verifying
-                            // would just fail and leave the page showing the
-                            // bare "verify your email" panel with no
-                            // confirmation the resubmit actually worked.
-                            // Replace the page content with a clear success
-                            // state instead of reloading.
                             showResubmitSuccess(data.case_status);
                         }
                     });

@@ -1,13 +1,5 @@
 frappe.ready(function () {
 
-    /* =========================================================
-       AES-GCM DECRYPTION — every server response carrying real case
-       data (name, beneficiary, approver contacts, ...) comes back as
-       {encrypted, iv, data} instead of plain JSON, so it isn't sitting
-       in cleartext in the browser's Network tab. Same key/shape as
-       support_iid_case_registration.js's decryptPayload — must match
-       encrypt_response() in case_register.py.
-    ========================================================= */
 
     var AES_KEY_B64 = "sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=";
 
@@ -37,14 +29,6 @@ frappe.ready(function () {
         });
     }
 
-    /* =========================================================
-       1. Read the encrypted approval token from the URL and
-          resolve it (guest-safe) to pre-fill case/approver info.
-          The token — not case_id/approver_email in plain query
-          params — is what proves the caller received the emailed
-          link; the OTP step below proves they can access that
-          inbox right now.
-    ========================================================= */
 
     var params = new URLSearchParams(window.location.search);
     var token = params.get('token') || '';
@@ -59,9 +43,6 @@ frappe.ready(function () {
         addOtpControls();
     }
 
-    /* =========================================================
-       2. Comments — hidden unless Decline or Send Back
-    ========================================================= */
 
     frappe.web_form.set_df_property('comments', 'hidden', 1);
     frappe.web_form.set_df_property('comments', 'reqd', 0);
@@ -72,9 +53,6 @@ frappe.ready(function () {
         frappe.web_form.set_df_property('comments', 'reqd',   needsComment ? 1 : 0);
     });
 
-    /* =========================================================
-       3. Resolve the token to display case/approver details
-    ========================================================= */
 
     function resolveToken(tok) {
         frappe.call({
@@ -89,11 +67,6 @@ frappe.ready(function () {
                     frappe.web_form.set_df_property('approver_name', 'read_only', 1);
                     frappe.web_form.set_df_property('approver_name_email', 'read_only', 1);
 
-                    // The stage may have already been decided (e.g. someone
-                    // reopens an old email link after the case moved on) —
-                    // in that case Approve/Decline/Send Back no longer make
-                    // sense, so show the current status instead of ever
-                    // revealing the action options, even after OTP verify.
                     var status = (data.status || '').trim();
                     if (status && status !== 'Awaiting For Approval') {
                         stageAlreadyDecided = true;
@@ -124,12 +97,6 @@ frappe.ready(function () {
         $actionWrapper.before($notice);
     }
 
-    /* =========================================================
-       4. OTP flow — Send Code, then an explicit Verify step.
-          Progressive reveal: the Verification Code field is
-          hidden until "Send Verification Code" is clicked; the
-          Action field is hidden until the code is verified.
-    ========================================================= */
 
     function refreshSaveVisibility() {
         var $submitBtn = $('.web-form .submit-btn, .web-form-footer .submit-btn');
@@ -150,9 +117,6 @@ frappe.ready(function () {
 
     function unlockAfterVerified() {
         if (stageAlreadyDecided) {
-            // Verified successfully, but the stage was already actioned —
-            // the action field stays hidden; showAlreadyDecidedNotice()
-            // already told the user why, so there's nothing left to submit.
             refreshSaveVisibility();
             return;
         }
@@ -162,13 +126,6 @@ frappe.ready(function () {
     }
 
     function addOtpControls() {
-        // The "Send Verification Code" button must stay visible even while
-        // the otp field itself is hidden (it's what reveals the field in
-        // the first place), so it lives in its own sibling row placed
-        // BEFORE the field. The Verify button only matters once the field
-        // is already visible, so it goes in a separate sibling row placed
-        // AFTER the field — reading top to bottom as Send → field → Verify,
-        // not stacked above the field it verifies.
         var $otpWrapper = frappe.web_form.get_field
             ? frappe.web_form.get_field('otp').$wrapper
             : $('[data-fieldname="otp"]');
@@ -258,20 +215,7 @@ frappe.ready(function () {
         });
     }
 
-    /* =========================================================
-       5. After form save — call the shared process_case_approval
-          API (same one used by the case registry and dashboard)
-          to update: approval stage status + log + case_status.
-          The token + verify_ticket are passed through so the
-          server can confirm identity without requiring a login
-          or re-checking the OTP a second time.
-    ========================================================= */
 
-    /* =========================================================
-       6. TITLE + LOGO SWAP — same treatment as the registration
-          form, so approvers see one consistent branded design
-          across every Support IID web form.
-    ========================================================= */
 
     var titleTries = 0;
     var titleTimer = setInterval(function () {
@@ -317,10 +261,6 @@ frappe.ready(function () {
                 if (!r.message) return;
                 decryptResponse(r.message).then(function (data) {
                     if (data && data.case_status) {
-                        // The stored value stays "Sent Back" everywhere it's
-                        // used as data (filters, comparisons) — only the
-                        // text actually shown to a user gets the friendlier
-                        // "Pending with Requester" wording.
                         var displayStatus = data.case_status === 'Sent Back' ? 'Pending with Requester' : data.case_status;
                         var statusText = data.case_status === 'Pending Approval' && data.current_approval_level
                             ? displayStatus + ' (' + data.current_approval_level + ')'

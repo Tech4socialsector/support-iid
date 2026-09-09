@@ -13,13 +13,6 @@ CASE_STATUS_VALUES = [
 
 
 def execute():
-	"""
-	Seeds the Case Status List master with the fixed set of case status
-	values, then migrates existing Case Register rows off the old free-text
-	case_status (which sometimes baked the approval level's name directly
-	into the string, e.g. "Pending Approval - L1 Reviewer") onto the new
-	Link field + a separate current_approval_level field.
-	"""
 	for status in CASE_STATUS_VALUES:
 		if not frappe.db.exists("Case Status List", status):
 			frappe.get_doc(
@@ -47,8 +40,6 @@ def execute():
 			new_status = old_status
 			level = ""
 		else:
-			# Unrecognized legacy value — leave as Pending Approval so it
-			# still resolves to a valid Link rather than a dangling string.
 			new_status = "Pending Approval"
 			level = old_status
 

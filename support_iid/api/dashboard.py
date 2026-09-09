@@ -1,5 +1,3 @@
-# Copyright (c) 2026, Tech For Social Sector and contributors
-# For license information, please see license.txt
 
 import frappe
 
@@ -23,12 +21,6 @@ DASHBOARD_FIELDS = [
 
 
 def _attach_approved_by(rows):
-	"""
-	For each case row, adds 'approved_by' — the approver_name from the most
-	recent Case Approval Stage marked "Approve" for that case (i.e. the last
-	person who approved it, which may be an intermediate level if the case
-	hasn't finished its full approval chain yet).
-	"""
 	if not rows:
 		return rows
 
@@ -53,30 +45,6 @@ def _attach_approved_by(rows):
 
 @frappe.whitelist()
 def get_dashboard_data(from_date=None, to_date=None):
-	"""
-	Returns one lightweight row per Case Register — just the fields the
-	Support IID Dashboard needs to compute its Key Metrics and filters,
-	entirely on the client.
-
-	Scoped to the logged-in user exactly like Case Register's own doctype
-	permissions (get_permission_query_conditions in case_register.py):
-	Administrator/System Manager see every case; a Requester sees only
-	their own cases; a Support IID Approver sees cases relevant to their
-	place in the approval chain; a Support IID Reviewer sees every case
-	that has at least one configured approver (no per-case assignment for
-	that role). Enforced by frappe.get_list applying that same permission
-	query condition automatically, so this can't drift out of sync with
-	the doctype's real rules.
-
-	Args:
-	    from_date: optional — only include cases with request_date >= this
-	    to_date: optional — only include cases with request_date <= this
-
-	Note: "Total Patients Supported under NWH" is computed from
-	amount_already_spent (cases where the family had already spent
-	something out of pocket) per the client's mapping — there's no
-	dedicated "APF contribution" field on Case Register yet.
-	"""
 	if not frappe.has_permission("Case Register", ptype="read"):
 		frappe.throw("You don't have permission to view the Case Register dashboard.", frappe.PermissionError)
 
@@ -88,22 +56,6 @@ def get_dashboard_data(from_date=None, to_date=None):
 	elif to_date:
 		filters["request_date"] = ["<=", to_date]
 
-	# frappe.get_list (unlike frappe.get_all, used here previously) applies
-	# Case Register's own permission query condition automatically — see
-	# get_permission_query_conditions in case_register.py, which already
-	# correctly scopes a Requester to their own cases, an Approver to
-	# cases relevant to their place in the approval chain, and a Reviewer
-	# to every case that has at least one configured approver (no
-	# per-case assignment for that role — matches has_permission's own
-	# model). Re-deriving that same scoping by hand here (as this used to)
-	# is exactly how a Support IID Reviewer ended up seeing NO cases on
-	# this dashboard at all: the old code only ever recognized
-	# Administrator/System Manager as "sees everything" and fell every
-	# other role — Reviewer included — through to the approver-only
-	# per-stage-assignment filter, which a Reviewer (who isn't assigned to
-	# any individual stage) always failed. Calling frappe.get_list instead
-	# means this dashboard can never drift out of sync with the doctype's
-	# real permission rules again, for this role or any future one.
 	rows = frappe.get_list("Case Register", fields=DASHBOARD_FIELDS, filters=filters, limit_page_length=0)
 	return _attach_approved_by(rows)
 
@@ -143,10 +95,6 @@ def _export_rows_for_display(rows):
 
 
 def _build_styled_xlsx(headers, data):
-	"""
-	Builds an .xlsx with real formatting — bordered cells, a light-blue
-	header row, and subtle zebra striping — instead of a bare data dump.
-	"""
 	import io
 
 	from openpyxl import Workbook
@@ -199,17 +147,6 @@ def _build_styled_xlsx(headers, data):
 
 @frappe.whitelist(methods=["GET", "POST"])
 def export_case_list(names, file_format):
-	"""
-	Exports exactly the set of cases currently shown in a Dashboard
-	drill-down popup — as a real server-generated file (Excel or PDF),
-	not built client-side. Triggered by opening this URL directly (a
-	GET request), not via frappe.call, since it streams a binary file
-	back instead of JSON.
-
-	Args:
-	    names: JSON-encoded list of Case Register names to export
-	    file_format: 'excel' or 'pdf'
-	"""
 	try:
 		if not frappe.has_permission("Case Register", ptype="read"):
 			frappe.throw(
@@ -224,17 +161,6 @@ def export_case_list(names, file_format):
 		if not names:
 			frappe.throw("No cases to export.")
 
-		# frappe.get_list (not frappe.get_all — see get_dashboard_data's own
-		# comment above) applies Case Register's real permission query
-		# condition automatically, so a caller can never export a case
-		# their own role doesn't actually have permission to see just by
-		# passing its name in — this replaces the old hand-rolled
-		# _approver_case_names() re-check, which (a) only ever recognized
-		# Administrator/System Manager as unrestricted, wrongly blocking a
-		# Reviewer from exporting cases they can see everywhere else in
-		# this dashboard, and (b) never applied Requester scoping at all,
-		# so a Requester passing another requestor's case name here would
-		# have gone straight through to the export.
 		rows = frappe.get_list(
 			"Case Register",
 			fields=[
@@ -261,8 +187,6 @@ def export_case_list(names, file_format):
 			frappe.response["type"] = "binary"
 			return
 
-		# PDF — import explicitly rather than relying on frappe.utils.pdf
-		# already being loaded as an attribute elsewhere in the process.
 		from frappe.utils.pdf import get_pdf
 
 		amount_cols = {h for h in ("Requested Amount", "Approved Amount") if h in headers}

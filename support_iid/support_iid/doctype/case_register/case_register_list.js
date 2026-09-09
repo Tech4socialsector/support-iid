@@ -1,11 +1,4 @@
-// Copyright (c) 2026, Tech For Social Sector and contributors
-// For license information, please see license.txt
 
-// Colors the Case Status badge — both in the list view and the form's
-// own title-area indicator (frappe.get_indicator calls this same hook
-// for both). Mirrors the palette already used on the custom Case
-// Registry page's STATUS_COLOR map, extended with the two statuses that
-// page didn't have a case for (Pending Approval, Withdrawn).
 const CASE_REGISTER_STATUS_COLOR = {
 	Draft: "gray",
 	"Pending Approval": "orange",

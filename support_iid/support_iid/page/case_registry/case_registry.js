@@ -32,17 +32,6 @@ const STATUS_COLOR = {
 	'Final Verification': 'orange'
 };
 
-// The stored case_status value stays "Sent Back"/"Final Verification"
-// (Link values, used in filters/data/comparisons everywhere) — these are
-// the places that value should actually show something friendlier to a
-// user: "Pending with Requester"/"Pending with Reviewer" instead of the
-// more passive/technical stored wording.
-//
-// "Rejected" is flagged as a restricted/spam-trigger word by some
-// outgoing-mail providers — shown as "Declined" everywhere instead
-// (matching the wording already used for the Decline action). The
-// stored case_status value stays "Rejected" for data/filter
-// consistency.
 const STATUS_DISPLAY_LABELS = {
 	'Sent Back': 'Pending with Requester',
 	'Rejected': 'Declined',
@@ -52,9 +41,6 @@ function status_display_label(status) {
 	return STATUS_DISPLAY_LABELS[status] || status;
 }
 
-// Case Status is now a fixed Link value ("Pending Approval") with the
-// current approval level tracked separately — this composes the two back
-// into one display string, e.g. "Pending Approval (L1 Reviewer)".
 function display_status(c) {
 	var label = status_display_label(c.case_status);
 	if ((c.case_status === 'Pending Approval' || c.case_status === 'Sent Back') && c.current_approval_level) {
@@ -73,9 +59,6 @@ function status_color(status) {
 const ACTION_LABEL = { 'Approve': 'Approve', 'Decline': 'Decline', 'Send Back': 'Send Back' };
 const ACTION_PAST = { 'Approve': 'approved', 'Decline': 'declined', 'Send Back': 'sent back' };
 
-// Same public dataset used on the Support IID Dashboard's State/District
-// filters, so both pages offer the same real dropdown options instead of
-// free text.
 const INDIA_LOCATION_URL = 'https://raw.githubusercontent.com/sab99r/Indian-States-And-Districts/master/states-and-districts.json';
 
 const STATUS_HEX = {
@@ -92,11 +75,6 @@ function relative_date(date_str) {
 	}
 }
 
-// ---------------------------------------------------------------
-// SAMPLE DATA — for testing the UI without real database records.
-// Toggle "Test Mode" in the toolbar to browse/act on these instead
-// of calling the server. Nothing here is saved to the database.
-// ---------------------------------------------------------------
 const SAMPLE_CASES = [
 	{
 		name: 'SIID-TEST-001', beneficiary_name: 'Lakshmi Narayanan',
@@ -222,9 +200,6 @@ class CaseListView {
 		this.load_data();
 	}
 
-	// Keeps the browser's Back/Forward buttons in sync with list <-> detail
-	// navigation by pushing a hash whenever a case is opened, and reacting
-	// to hashchange (fired on both our own navigation and browser back/forward).
 	setup_routing() {
 		var self = this;
 		this._hash_handler = function () {
@@ -612,9 +587,6 @@ class CaseListView {
 		});
 	}
 
-	// Client-side filters applied to the already-loaded row set — matches
-	// the dashboard drill-down grid's search-box-over-loaded-rows approach,
-	// but keeps per-column inputs since that's finer-grained than one box.
 	get_filtered_rows() {
 		var status = this.wrapper.find('#cl-status').val();
 		var type = this.wrapper.find('#cl-type').val();
@@ -648,9 +620,6 @@ class CaseListView {
 		return rows;
 	}
 
-	// Fetches the full working set of cases (like the dashboard's drill-down
-	// grid does) so search/sort/pagination can all run instantly, client-side,
-	// against already-loaded rows instead of round-tripping per interaction.
 	load_data() {
 		var self = this;
 
@@ -678,8 +647,6 @@ class CaseListView {
 		});
 	}
 
-	// Re-applies filter/sort/pagination to the already-loaded rows — call
-	// this (not load_data) whenever a filter, sort, or page changes.
 	refresh_table() {
 		this.render_table();
 	}
@@ -774,15 +741,6 @@ class CaseListView {
 	}
 
 	get_current_stage(doc) {
-		// Only "Pending Approval" cases have a stage genuinely awaiting
-		// action. Any other case_status (Sent Back, Rejected, Approved,
-		// On Hold, Closed) means no approver should see a Take Action
-		// button — even though a LATER stage's own row may still carry a
-		// blank status simply because it was never reached yet (e.g.
-		// stage 3 when the case was sent back at stage 1). Without this
-		// check, scanning stage rows alone would incorrectly treat that
-		// untouched later stage as "current" and show Take Action on a
-		// case that isn't actually awaiting any approver right now.
 		if (doc.case_status !== 'Pending Approval') return null;
 
 		var stages = doc.case_approval_stage || [];
@@ -1074,9 +1032,6 @@ class CaseListView {
 		});
 	}
 
-	// Reviewer / admin action on an Approved case — records fund-transfer
-	// details and marks it Closed. Mirrors open_action_modal/submit_approval
-	// above, but for this separate action + field set.
 	open_close_case_modal(doc) {
 		$('.cl-close-modal-backdrop').remove();
 		var self = this;
@@ -1186,8 +1141,6 @@ class CaseListView {
 		});
 	}
 
-	// Dropdown → popup with the approval level, a comment box, and a Submit
-	// button. Nothing is sent to the server until the user confirms here.
 	open_action_modal(action) {
 		$('.cl-action-modal-backdrop').remove();
 
@@ -1234,8 +1187,6 @@ class CaseListView {
 		$('body').append(modal);
 	}
 
-	// Mirrors the server-side process_case_approval logic, purely in-memory,
-	// so Test Mode can be used to click through the full workflow.
 	simulate_approval_locally(doc, action, comments) {
 		var stages = doc.case_approval_stage || [];
 		var current_idx = -1;
@@ -1276,8 +1227,6 @@ class CaseListView {
 		}
 	}
 
-	// Opens any uploaded file (image, PDF, audio, video, or other) in an
-	// inline preview popup instead of just linking out to it.
 	open_document_modal(url, name) {
 		$('.cl-modal-backdrop').remove();
 

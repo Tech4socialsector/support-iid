@@ -9,7 +9,8 @@
   "notifications_section",
   "send_requestor_notification_emails",
   "validation_section",
-  "enforce_email_domain_validation"
+  "enforce_email_domain_validation",
+  "disable_case_register_mandatory_fields"
  ],
  "fields": [
   {
@@ -35,6 +36,13 @@
    "fieldname": "enforce_email_domain_validation",
    "fieldtype": "Check",
    "label": "Enforce Email Domain Validation"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, every field marked mandatory on the Case Register doctype, and on its Supporting Documents/Family Members child tables, becomes genuinely optional everywhere — the Desk form, the public web form, and a Frappe Data Import all stop requiring them. This edits the actual field definitions (via Property Setters), not just one save path, so turn it off again once you're done importing historical data to restore normal validation for everyone.",
+   "fieldname": "disable_case_register_mandatory_fields",
+   "fieldtype": "Check",
+   "label": "Disable Case Register Mandatory Fields"
   }
  ],
  "grid_page_length": 50,
