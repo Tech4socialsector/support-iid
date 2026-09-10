@@ -46,11 +46,39 @@ def case_status_display_label(status):
 	return CASE_STATUS_DISPLAY_LABELS.get(status, status)
 
 
-_RESPONSE_AES_KEY = base64.b64decode("sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=")
+def _response_aes_key():
+	"""
+	AES-256-GCM key for encrypt_response()/get_response_encryption_key()
+	below, derived from this SITE's own real secret (frappe.utils.
+	password.get_encryption_key() — the same per-site key Frappe's own
+	Fernet-based encrypt/decrypt already use for the approval/edit/
+	withdraw tokens elsewhere in this file), not a fixed literal.
+
+	This response-encryption layer was never meant as real
+	confidentiality against a network-level attacker in the first place
+	— every one of its callers is a guest/token-based endpoint with no
+	independent per-request secret the browser could derive a key from
+	without the server just sending that key back in the same response,
+	which would protect nothing a Network-tab observer couldn't already
+	see. What deriving from get_encryption_key() DOES fix: previously
+	this was one literal string, shared verbatim by every installation
+	of this open app (visible in this file and duplicated in
+	microsoft_graph.py, and unavoidably duplicated again in every web
+	form's own client-side JS so the browser can decrypt) — meaning
+	anyone who had ever seen this app's source had the same key that
+	unlocks EVERY deployment's encrypted responses, not just this one's.
+	Deriving from this site's own secret means a key leaked from one
+	deployment (e.g. a compromised dev site) no longer works against any
+	other deployment.
+	"""
+	from frappe.utils.password import get_encryption_key
+
+	site_key = get_encryption_key().encode("utf-8")
+	return hashlib.sha256(site_key + b"support_iid:response-encryption-v1").digest()
 
 
 def encrypt_response(data):
-	aesgcm = AESGCM(_RESPONSE_AES_KEY)
+	aesgcm = AESGCM(_response_aes_key())
 	nonce = os.urandom(12)
 	ciphertext = aesgcm.encrypt(nonce, json.dumps(data, default=str).encode("utf-8"), None)
 	return {
@@ -58,6 +86,19 @@ def encrypt_response(data):
 		"iv": base64.b64encode(nonce).decode("utf-8"),
 		"data": base64.b64encode(ciphertext).decode("utf-8"),
 	}
+
+
+@frappe.whitelist(allow_guest=True)
+def get_response_encryption_key():
+	"""
+	Lets a guest web form fetch the AES-256-GCM key encrypt_response()
+	actually used, once per page load, instead of a hardcoded literal
+	baked into every deployment's client-side JS (see _response_aes_key's
+	own docstring for why that was the specific problem being fixed, and
+	why this doesn't add real confidentiality beyond that — it's the same
+	trust level as any other guest endpoint in this file).
+	"""
+	return base64.b64encode(_response_aes_key()).decode("utf-8")
 
 
 def make_approval_token(case_name, level_idx, approver_email):
@@ -152,6 +193,7 @@ def _otp_cache_key(token):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(key="token", limit=5, seconds=10 * 60)
 def send_approval_otp(token):
 	payload = read_approval_token(token)
 	if not payload:
@@ -201,6 +243,7 @@ def send_approval_otp(token):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(key="token", limit=5, seconds=10 * 60)
 def send_edit_otp(token):
 	payload = read_edit_token(token)
 	if not payload:
@@ -248,6 +291,7 @@ def send_edit_otp(token):
 
 
 @frappe.whitelist(allow_guest=True)
+@rate_limit(key="token", limit=5, seconds=10 * 60)
 def send_withdraw_otp(token):
 	payload = read_withdraw_token(token)
 	if not payload:
@@ -356,7 +400,7 @@ def _otp_or_ticket_verified(token, otp, verify_ticket):
 
 
 @frappe.whitelist(allow_guest=True)
-@rate_limit(limit=30, seconds=10 * 60)
+@rate_limit(key="token", limit=30, seconds=10 * 60)
 def verify_approval_otp(token, otp):
 	"""Explicit "Verify" step for the approval web form's OTP."""
 	if not _verify_and_consume_otp(token, otp):
@@ -365,7 +409,7 @@ def verify_approval_otp(token, otp):
 
 
 @frappe.whitelist(allow_guest=True)
-@rate_limit(limit=30, seconds=10 * 60)
+@rate_limit(key="token", limit=30, seconds=10 * 60)
 def verify_edit_otp(token, otp):
 	"""Explicit "Verify" step for the case-edit web form's OTP."""
 	if not _verify_and_consume_otp(token, otp):
@@ -374,7 +418,7 @@ def verify_edit_otp(token, otp):
 
 
 @frappe.whitelist(allow_guest=True)
-@rate_limit(limit=30, seconds=10 * 60)
+@rate_limit(key="token", limit=30, seconds=10 * 60)
 def verify_withdraw_otp(token, otp):
 	"""Explicit "Verify" step for the case-withdraw web form's OTP."""
 	if not _verify_and_consume_otp(token, otp):
@@ -398,6 +442,37 @@ def _logo_inline_image():
 		return None
 	with open(_APF_LOGO_PATH, "rb") as f:
 		return {"filename": _APF_LOGO_FILENAME, "filecontent": f.read()}
+
+
+def _sanitize_untrusted_text(text):
+	"""
+	Neutralizes every character _lines_to_html's own tokenizer treats as
+	the start of a markdown-style token — '[' (button/link), '*' (bold),
+	'=' (highlight) — by replacing each with a visually near-identical
+	full-width Unicode variant, so the text still reads normally to a
+	human but can never match those patterns. Bare https:// URLs are
+	defused the same way, via the colon.
+
+	Apply this to any free-text field a GUEST or a logged-in but
+	non-privileged user supplies (an approval decision's comments, a
+	withdraw reason, an edit-and-resubmit note) before it becomes its own
+	line in an email — otherwise that text is rendered through the exact
+	same token parser this app's own trusted call sites use to build
+	real buttons/links/highlights, and a value like
+	"[[Click here]](https://phish.example)" would render as a genuine,
+	convincingly-styled button in an official Support IID email, sent
+	under the organization's own name to the requestor and every
+	Reviewer.
+	"""
+	if not text:
+		return text
+	return (
+		text.replace("[", "［")
+		.replace("]", "］")
+		.replace("*", "＊")
+		.replace("=", "＝")
+		.replace(":", "：")
+	)
 
 
 def _lines_to_html(lines):
@@ -1086,19 +1161,23 @@ class CaseRegister(Document):
 
 	def validate(self):
 		# Support IID Settings.disable_case_register_mandatory_fields is
-		# the single switch for this — checked, every mandatory check
-		# below (both Frappe's own reqd:1 fields and this doctype's own
-		# mandatory-document check) is skipped for every save, Data
-		# Import included, since an import goes through this exact same
-		# validate() per row; unchecked, a Data Import gets no special
-		# treatment and is validated exactly like any other save. No
-		# separate automatic relaxation for "a Data Import happens to be
-		# running" — that used to bypass mandatory checks unconditionally
-		# during any import regardless of this checkbox, which meant an
-		# import could silently skip validation the checkbox said should
-		# still apply.
+		# the single switch for this — checked, both halves of what a
+		# fresh submission normally enforces are skipped for every save
+		# (Data Import included, since an import goes through this exact
+		# same validate() per row): Frappe's own reqd:1/mandatory-document
+		# checks (self.flags.ignore_mandatory, below) AND this doctype's
+		# own format/validity checks (self.flags.ignore_format_validation,
+		# checked at the top of each _validate_* method below) — a pincode
+		# that isn't cleanly 6 digits, a badly-shaped email, a future date
+		# of birth, non-numeric currency, or a name with digits in it are
+		# all format problems a missing-value flag alone doesn't cover,
+		# and genuinely messy historical data being imported is exactly
+		# as likely to have one of THOSE as to have a field simply left
+		# blank. Unchecked, a Data Import gets no special treatment and is
+		# validated exactly like any other save.
 		if frappe.db.get_single_value("Support IID Settings", "disable_case_register_mandatory_fields"):
 			self.flags.ignore_mandatory = True
+			self.flags.ignore_format_validation = True
 
 		self._validate_pincode()
 		self._validate_date_of_birth()
@@ -1108,17 +1187,43 @@ class CaseRegister(Document):
 		self._validate_name_fields()
 		self._validate_mandatory_documents()
 
+	def _validate_data_fields(self):
+		# Frappe core's own Email/Phone/Name fieldtype-option validation
+		# (base_document.py) — completely separate from, and NOT covered
+		# by, self.flags.ignore_mandatory or the ignore_format_validation
+		# flag this doctype's own _validate_* methods check above: core
+		# calls this unconditionally from Document._validate(), with no
+		# flag of its own to skip it. Case Register has several Email/
+		# Phone/Name-typed fields (email, requestor_mobile_number,
+		# mobile_number, primary_contact_mobile, primary_contact_person,
+		# ...), so without this override, disable_case_register_mandatory_
+		# fields would still block a Data Import row over a malformed
+		# phone number or email even with every OTHER validation
+		# correctly relaxed. Safe to skip entirely here (rather than
+		# needing a way to mutate just the one offending field) since
+		# core's own version does nothing except these format checks —
+		# nothing else relies on this method having run.
+		if self.flags.ignore_format_validation:
+			return
+		super()._validate_data_fields()
+
 	def _validate_pincode(self):
+		if self.flags.ignore_format_validation:
+			return
 		pincode = str(self.get("pincode") or "").strip()
 		if pincode and (len(pincode) != 6 or not pincode.isdigit()):
 			frappe.throw("Please enter a valid 6-digit pincode.", title="Invalid Pincode")
 
 	def _validate_date_of_birth(self):
+		if self.flags.ignore_format_validation:
+			return
 		dob = self.get("date_of_birth")
 		if dob and getdate(dob) > getdate(today()):
 			frappe.throw("Date of Birth cannot be in the future.", title="Invalid Date of Birth")
 
 	def _validate_email_fields(self):
+		if self.flags.ignore_format_validation:
+			return
 		for fieldname in ("email", "requestor_email"):
 			value = (self.get(fieldname) or "").strip()
 			if value and not _EMAIL_SHAPE_RE.match(value):
@@ -1151,6 +1256,8 @@ class CaseRegister(Document):
 				)
 
 	def _validate_mobile_fields(self):
+		if self.flags.ignore_format_validation:
+			return
 		for fieldname in _MOBILE_FIELDS:
 			value = str(self.get(fieldname) or "").strip()
 			if value and not _MOBILE_RE.match(value):
@@ -1161,6 +1268,8 @@ class CaseRegister(Document):
 				)
 
 	def _validate_currency_fields(self):
+		if self.flags.ignore_format_validation:
+			return
 		for fieldname in _CURRENCY_FIELDS:
 			value = self.get(fieldname)
 			if value in (None, ""):
@@ -1172,6 +1281,8 @@ class CaseRegister(Document):
 				)
 
 	def _validate_name_fields(self):
+		if self.flags.ignore_format_validation:
+			return
 		for fieldname in _NAME_FIELDS:
 			value = str(self.get(fieldname) or "").strip()
 			if value and not _NAME_RE.match(value):
@@ -1587,7 +1698,7 @@ class CaseRegister(Document):
 			body_extra,
 		]
 		if comments:
-			lines += ["", "**Notes:**", comments]
+			lines += ["", "**Notes:**", _sanitize_untrusted_text(comments)]
 		if action_line:
 			lines += ["", action_line]
 		lines += ["", "Regards,"]
@@ -1843,7 +1954,7 @@ class CaseRegister(Document):
 					prev_line += f" — approved by {previous_approver_name}"
 			lines.append(prev_line)
 			if previous_comments:
-				lines.append(f"**Comments:** {previous_comments}")
+				lines.append(f"**Comments:** {_sanitize_untrusted_text(previous_comments)}")
 			lines.append("")
 
 		lines.append("**Case Details:**")
@@ -2109,7 +2220,7 @@ def _do_withdraw_case(doc, reason):
 				"",
 				f"This is to confirm that case {doc.name} has been withdrawn at your request.",
 				"",
-				f"**Reason:** {reason}",
+				f"**Reason:** {_sanitize_untrusted_text(reason)}",
 				"",
 				"No further action will be taken on this case. If this was "
 				"done in error, please feel free to submit a new request.",
@@ -2186,7 +2297,7 @@ def _notify_reviewers_of_withdrawal(doc, reason):
 				"",
 				f"**Beneficiary:** {doc.beneficiary_name or '-'}",
 				f"**Requestor:** {doc.requestor_name or '-'} ({doc.requestor_email or '-'})",
-				f"**Reason given:** {reason}",
+				f"**Reason given:** {_sanitize_untrusted_text(reason)}",
 				"",
 				"No further action is needed on this case.",
 				"",
@@ -2281,7 +2392,7 @@ def _notify_reviewers_of_provisional_approval(doc, approver_name, comments=None)
 		f"**Last approved by:** {approver_name or '-'}",
 	]
 	if comments:
-		lines += ["", "**Approver notes:**", comments]
+		lines += ["", "**Approver notes:**", _sanitize_untrusted_text(comments)]
 	lines += [
 		"",
 		"The full case summary PDF and all supporting documents are attached for your reference.",
@@ -2647,10 +2758,19 @@ def submit_case_edit(token, data, otp=None, verify_ticket=None):
 		data = json.loads(data)
 
 	web_form = frappe.get_doc("Web Form", "support-iid-case-registration")
+	# requestor_email is deliberately excluded even though it's a real field
+	# on this web form — this whole flow authenticates the caller as the
+	# ORIGINAL requestor (payload.requestor_email, checked against the doc
+	# above), and letting that same call silently reassign requestor_email
+	# would hijack the case: every later ownership check
+	# (_requester_only_scope_email, has_permission, this same equality
+	# check on a future resubmit) would then treat the new address as the
+	# legitimate owner, and every future notification would go there
+	# instead of the real requestor.
 	editable_fieldnames = {
 		f.fieldname
 		for f in web_form.web_form_fields
-		if f.fieldname not in ("case_approval_stage", "case_approval_log")
+		if f.fieldname not in ("case_approval_stage", "case_approval_log", "requestor_email")
 	}
 
 	for fieldname, value in (data or {}).items():

@@ -82,12 +82,28 @@ def debug_graph(email):
 	return {"status_code": response.status_code, "headers": dict(response.headers), "response": response.text}
 
 
-# AES key — must match the key in the web form client script
-AES_KEY = base64.b64decode("sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=")
+def _response_aes_key():
+	"""
+	Same derivation as _response_aes_key() in case_register.py (kept as a
+	small, dependency-free duplicate here rather than an import, to avoid
+	a circular import — case_register.py already imports FROM this
+	module) — must produce the identical key, since every web form's
+	client-side JS uses one shared key to decrypt responses from both
+	this module and case_register.py. See that function's own docstring
+	for why this is derived from the site's own real secret
+	(get_encryption_key()) instead of a fixed literal, and what that
+	does and doesn't protect against.
+	"""
+	import hashlib
+
+	from frappe.utils.password import get_encryption_key
+
+	site_key = get_encryption_key().encode("utf-8")
+	return hashlib.sha256(site_key + b"support_iid:response-encryption-v1").digest()
 
 
 def encrypt_payload(data: dict) -> dict:
-	aesgcm = AESGCM(AES_KEY)
+	aesgcm = AESGCM(_response_aes_key())
 	nonce = os.urandom(12)
 	ciphertext = aesgcm.encrypt(nonce, json.dumps(data).encode("utf-8"), None)
 	return {

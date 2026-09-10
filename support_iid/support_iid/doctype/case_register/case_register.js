@@ -1178,7 +1178,13 @@ function case_register_show_submission_success(case_name) {
 	overlay.querySelector(".cr-submit-success-done").addEventListener("click", close);
 }
 
-const CASE_REGISTER_AES_KEY_B64 = "sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=";
+// The AES key itself is fetched from the server (get_response_encryption_key,
+// derived there from this site's own real secret) instead of being a fixed
+// literal baked into this file — see that function's docstring in
+// case_register.py for why a literal here would be the exact same value
+// shipped in every installation of this open app. Fetched once per page
+// load and cached (case_register_crypto_key_promise).
+var case_register_crypto_key_promise = null;
 
 function case_register_base64_to_bytes(b64) {
 	var binary = atob(b64);
@@ -1189,12 +1195,34 @@ function case_register_base64_to_bytes(b64) {
 	return bytes;
 }
 
+function case_register_get_crypto_key() {
+	if (!case_register_crypto_key_promise) {
+		case_register_crypto_key_promise = new Promise(function (resolve, reject) {
+			frappe.call({
+				method: "support_iid.support_iid.doctype.case_register.case_register.get_response_encryption_key",
+				callback: function (r) {
+					if (!r.message) {
+						reject(new Error("Could not fetch decryption key."));
+						return;
+					}
+					crypto.subtle
+						.importKey("raw", case_register_base64_to_bytes(r.message), { name: "AES-GCM" }, false, ["decrypt"])
+						.then(resolve, reject);
+				},
+				error: function () {
+					reject(new Error("Could not fetch decryption key."));
+				},
+			});
+		});
+	}
+	return case_register_crypto_key_promise;
+}
+
 function case_register_decrypt_payload(payload) {
 	if (!payload || !payload.encrypted) {
 		return Promise.resolve(payload);
 	}
-	return crypto.subtle
-		.importKey("raw", case_register_base64_to_bytes(CASE_REGISTER_AES_KEY_B64), { name: "AES-GCM" }, false, ["decrypt"])
+	return case_register_get_crypto_key()
 		.then(function (key) {
 			return crypto.subtle.decrypt(
 				{ name: "AES-GCM", iv: case_register_base64_to_bytes(payload.iv) },

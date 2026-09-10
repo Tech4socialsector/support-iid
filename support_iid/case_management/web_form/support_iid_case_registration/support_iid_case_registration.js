@@ -363,7 +363,15 @@ frappe.ready(function () {
     }
 
 
-    var AES_KEY_B64 = "sY/J1pzdls6Bh5U8mjk4KicUak1r+9enaaVzIXlIqes=";
+    // The AES key itself is fetched from the server (get_response_encryption_key,
+    // derived there from this site's own real secret — see its docstring in
+    // case_register.py) instead of being a fixed literal baked into this
+    // file — a literal here would be the exact same value shipped in every
+    // installation of this open app, so anyone who's ever seen this app's
+    // source would hold a key that unlocks every deployment's encrypted
+    // responses, not just this one's. Fetched once per page load and
+    // cached (cryptoKeyPromise) rather than re-fetched on every decrypt.
+    var cryptoKeyPromise = null;
 
     function base64ToBytes(b64) {
         var binary = atob(b64);
@@ -374,13 +382,34 @@ frappe.ready(function () {
         return bytes;
     }
 
+    function getCryptoKey() {
+        if (!cryptoKeyPromise) {
+            cryptoKeyPromise = new Promise(function (resolve, reject) {
+                frappe.call({
+                    method: 'support_iid.support_iid.doctype.case_register.case_register.get_response_encryption_key',
+                    callback: function (r) {
+                        if (!r.message) {
+                            reject(new Error('Could not fetch decryption key.'));
+                            return;
+                        }
+                        crypto.subtle.importKey(
+                            'raw', base64ToBytes(r.message), { name: 'AES-GCM' }, false, ['decrypt']
+                        ).then(resolve, reject);
+                    },
+                    error: function () {
+                        reject(new Error('Could not fetch decryption key.'));
+                    }
+                });
+            });
+        }
+        return cryptoKeyPromise;
+    }
+
     function decryptPayload(payload) {
         if (!payload || !payload.encrypted) {
             return Promise.resolve(payload);
         }
-        return crypto.subtle.importKey(
-            "raw", base64ToBytes(AES_KEY_B64), { name: "AES-GCM" }, false, ["decrypt"]
-        ).then(function (key) {
+        return getCryptoKey().then(function (key) {
             return crypto.subtle.decrypt(
                 { name: "AES-GCM", iv: base64ToBytes(payload.iv) },
                 key,
