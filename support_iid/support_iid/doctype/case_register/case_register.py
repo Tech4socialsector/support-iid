@@ -2655,3 +2655,52 @@ def resolve_registry_link(token):
 def get_current_user_roles():
 	frappe.cache.hdel("roles", frappe.session.user)
 	return frappe.get_roles(frappe.session.user)
+
+
+@frappe.whitelist()
+def bulk_set_case_status(names, case_status):
+	"""
+	System Manager/Administrator-only bulk override of case_status across
+	multiple cases at once, from the Case Register list view's own
+	"Bulk Update Case Status" action (see case_register_list.js).
+
+	Frappe's own Bulk Edit tool can't be used for this: it only offers a
+	field for bulk editing when that field's base read_only property is
+	0 (see is_field_editable in frappe/public/js/frappe/list/list_view.js)
+	— it has no awareness of case_status's read_only_depends_on override
+	(case_register.json), which only ever applies on an individual form.
+	Keeping case_status read-only at the base level (so ordinary users
+	still can't touch it there or via the API) meant it could never
+	appear in Bulk Edit's field list for anyone, System Manager included
+	— hence this separate, purpose-built, explicitly role-gated action
+	instead of trying to make Bulk Edit itself work.
+
+	Plain frappe.db.set_value writes, not a full doc.save() per case —
+	deliberately skipping validate() (the mandatory-field/pincode/etc.
+	checks) and the approval-email side effects a real status transition
+	normally fires, since this is an explicit admin override for a case
+	stuck in the wrong state, not a substitute for the real approval
+	workflow. Only touches case_status itself; current_approval_level,
+	case_approval_stage, and everything else about the case are left
+	exactly as they were.
+	"""
+	user = frappe.session.user
+	if user != "Administrator" and "System Manager" not in frappe.get_roles(user):
+		frappe.throw(
+			"You don't have permission to bulk-update Case Status.", frappe.PermissionError
+		)
+
+	if isinstance(names, str):
+		names = frappe.parse_json(names)
+	names = [n for n in (names or []) if n]
+	if not names:
+		frappe.throw("No cases selected.")
+
+	if not frappe.db.exists("Case Status List", case_status):
+		frappe.throw(f"'{case_status}' is not a valid Case Status.")
+
+	for name in names:
+		frappe.db.set_value("Case Register", name, "case_status", case_status, update_modified=True)
+
+	frappe.db.commit()
+	return {"updated": len(names)}
