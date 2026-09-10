@@ -484,6 +484,7 @@ function apply_request_type_labels(frm, value) {
 		frm.set_df_property("ailment__course_details", "label", __("Ailment Details"));
 		frm.set_df_property("treatment", "hidden", 0);
 		frm.set_df_property("treatment", "reqd", 1);
+		frm.set_df_property("reviewer_case_diagnosis", "label", __("Reviewer Case Diagnosis"));
 	} else if (value === "Education") {
 		frm.set_df_property("hospital_institution_name", "label", __("Institution Name"));
 		frm.set_df_property("hospital_institution_location", "label", __("Institution Location"));
@@ -491,18 +492,24 @@ function apply_request_type_labels(frm, value) {
 		frm.set_df_property("treatment", "hidden", 1);
 		frm.set_df_property("treatment", "reqd", 0);
 		if (frm.doc.treatment) frm.set_value("treatment", "");
+		frm.set_df_property("reviewer_case_diagnosis", "label", __("Reviewer Course Details"));
 	} else {
 		frm.set_df_property("hospital_institution_name", "label", __("Hospital / Institution Name"));
 		frm.set_df_property("hospital_institution_location", "label", __("Hospital / Institution Location"));
 		frm.set_df_property("ailment__course_details", "label", __("Ailment / Course Details"));
 		frm.set_df_property("treatment", "hidden", 0);
 		frm.set_df_property("treatment", "reqd", 0);
+		frm.set_df_property("reviewer_case_diagnosis", "label", __("Reviewer Case Diagnosis / Course Details"));
 	}
-	["hospital_institution_name", "hospital_institution_location", "ailment__course_details", "treatment"].forEach(
-		function (fieldname) {
-			frm.refresh_field(fieldname);
-		}
-	);
+	[
+		"hospital_institution_name",
+		"hospital_institution_location",
+		"ailment__course_details",
+		"treatment",
+		"reviewer_case_diagnosis",
+	].forEach(function (fieldname) {
+		frm.refresh_field(fieldname);
+	});
 }
 
 function mark_mandatory_document_rows(frm) {

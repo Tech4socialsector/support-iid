@@ -1230,6 +1230,7 @@ class CaseRegister(Document):
 			include_supporting_docs=True,
 		)
 		self._send_requestor_acknowledgement_email(case_pdf_path=pdf_path)
+		_notify_reviewers_of_new_case(self, pdf_path)
 
 	# ── Supporting document renaming ────────────────────────────────────────────
 
@@ -2194,6 +2195,68 @@ def _notify_reviewers_of_withdrawal(doc, reason):
 		)
 	except Exception:
 		frappe.log_error(frappe.get_traceback(), f"Reviewer withdrawal notification failed — {doc.name}")
+
+
+def _notify_reviewers_of_new_case(doc, case_pdf_path=None):
+	"""
+	Emails every user holding the Support IID Reviewer role as soon as a
+	new case is first submitted — alongside, not instead of, the
+	requestor's own acknowledgement email (_send_requestor_acknowledgement_email)
+	and the first approver's own request email (_send_approval_request_email),
+	both already sent from the same after_insert path. Purely informational:
+	a Reviewer isn't being asked to act at this point (the case is only
+	pending the first approval level), just kept aware a new case exists
+	from the moment it's filed, rather than only hearing about it once it
+	reaches Final Verification (see _notify_reviewers_of_provisional_approval).
+	Same "every Reviewer, not a per-case assignment" model as that function
+	and _notify_reviewers_of_withdrawal.
+	"""
+	reviewer_emails = frappe.get_all(
+		"Has Role",
+		filters={"role": "Support IID Reviewer", "parenttype": "User"},
+		pluck="parent",
+	)
+	reviewer_emails = [e for e in reviewer_emails if e and e not in ("Administrator", "Guest")]
+	if not reviewer_emails:
+		return
+
+	case_url = f"{get_url()}/desk/case-register/{doc.name}"
+	stages = doc.get("case_approval_stage") or []
+	first_stage = stages[0] if stages else None
+	level_label = (first_stage.case_approval_level_decription if first_stage else None) or "Level 1"
+
+	lines = [
+		"Dear Support IID Reviewer,",
+		"",
+		f"A new support request, Case {doc.name}, has just been submitted "
+		f"and is now pending **{level_label}** approval.",
+		"",
+		f"**Beneficiary:** {doc.beneficiary_name or '-'}",
+		f"**Requestor:** {doc.requestor_name or '-'} ({doc.requestor_email or '-'})",
+		"",
+		"No action is needed from you yet — this is for your awareness only. "
+		"You'll be notified again once the case reaches Final Verification.",
+		"",
+		f"[[View Case]]({case_url})",
+		"",
+		"Regards,",
+	]
+
+	attachments = []
+	if case_pdf_path:
+		fid = doc._get_file_id_from_url(case_pdf_path)
+		if fid:
+			attachments.append({"fid": fid})
+
+	try:
+		_send_plain_email(
+			recipients=reviewer_emails,
+			subject=f"New Case Submitted - [{doc.name}] - {doc.beneficiary_name or ''}",
+			lines=lines,
+			attachments=attachments,
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), f"Reviewer new-case notification failed — {doc.name}")
 
 
 def _notify_reviewers_of_provisional_approval(doc, approver_name, comments=None):

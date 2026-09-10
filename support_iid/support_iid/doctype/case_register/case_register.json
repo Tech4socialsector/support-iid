@@ -48,6 +48,7 @@
   "column_break_eybn",
   "treatment",
   "funds_requested",
+  "reviewer_case_diagnosis",
   "amount_already_spent",
   "financial_information_insurance_section",
   "annual_family_income",
@@ -269,6 +270,15 @@
    "fieldtype": "Small Text",
    "label": "Ailment / Course Details",
    "reqd": 1
+  },
+  {
+   "depends_on": "eval:(doc.type_of_request==\"Medical\" || doc.type_of_request==\"Education\") && (frappe.user_roles.includes(\"Support IID Reviewer\") || frappe.user_roles.includes(\"Support IID Approver\") || frappe.user_roles.includes(\"System Manager\") || frappe.session.user === \"Administrator\")",
+   "description": "Only visible to Support IID Reviewer/Approver, and only for Medical or Education requests — never shown to the Requester, the public web form, or an \"Others\"-type request.",
+   "fieldname": "reviewer_case_diagnosis",
+   "fieldtype": "Link",
+   "label": "Reviewer Case Diagnosis / Course Details",
+   "options": "Reviewer Case Diagnosis List",
+   "permlevel": 2
   },
   {
    "fieldname": "treatment",
@@ -541,7 +551,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-09 12:43:03.712545",
+ "modified": "2026-09-10 10:55:56.330033",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Register",
