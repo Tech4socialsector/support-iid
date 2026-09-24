@@ -169,16 +169,8 @@ class SupportIIDDashboard {
 
 			.sd-section-heading { font-size:15px; font-weight:700; margin:0 0 14px; color:var(--text-color,#1a1a1a); }
 
-			/* Filter bar acts as the page's toolbar — sticky so it stays
-			   reachable while scrolling past the metric cards / charts below,
-			   with a card-like surface (bg + shadow) instead of a bare
-			   bottom border so it reads as an elevated app-shell bar. */
-			.sd-filter-bar {
-				margin-bottom:22px; padding:16px 18px; border-radius:12px;
-				background:var(--card-bg,#fff); border:1px solid var(--border-color,#e3e8ec);
-				box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-				position:sticky; top:0; z-index:5;
-			}
+			/* Filter fields sit directly on the page — no card surface. */
+			.sd-filter-bar { margin-bottom:22px; }
 			.sd-filter-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px 18px; margin-bottom:16px; }
 			.sd-filter-item label { display:block; font-size:12px; font-weight:600; color:var(--text-muted,#8d99a6); margin-bottom:6px; text-transform:uppercase; letter-spacing:.03em; }
 			.sd-filter-item .form-control { width:100%; }
@@ -420,7 +412,6 @@ class SupportIIDDashboard {
 				.sd-page { padding:14px 14px 36px; }
 				.sd-metrics-grid { grid-template-columns:1fr; }
 				.sd-filter-grid { grid-template-columns:1fr; }
-				.sd-filter-bar { position:static; }
 				.sd-field-grid { grid-template-columns:1fr; }
 				.sd-detail-grid .sd-section { border-right:none !important; }
 				.sd-hero-stat { padding:0 12px; }
@@ -471,7 +462,7 @@ class SupportIIDDashboard {
 						</div>
 					</div>
 					<div class="sd-filter-actions">
-						<button class="btn btn-default btn-sm" id="sd-refresh" data-tooltip="Reload dashboard data">${icon('refresh', 13)} Reload</button>
+						<button class="btn btn-primary btn-sm" id="sd-refresh" data-tooltip="Reload dashboard data">${icon('refresh', 13)} Reload</button>
 						<button class="btn btn-default btn-sm" id="sd-f-clear" data-tooltip="Clear all active filters">${icon('clear', 13)} Clear filters</button>
 					</div>
 				</div>
