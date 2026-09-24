@@ -43,6 +43,25 @@ def _attach_approved_by(rows):
 	return rows
 
 
+def _attach_reviewer_verified(rows):
+	# Same test case_register uses to tell the final round from the provisional one:
+	# once a Reviewer has approved, the case's next "Pending Approval" is the final round.
+	if not rows:
+		return rows
+
+	names = [r["name"] for r in rows]
+	verified = set(
+		frappe.get_all(
+			"Case Approval Log",
+			filters={"parent": ["in", names], "action": "Reviewer Approve"},
+			pluck="parent",
+		)
+	)
+	for r in rows:
+		r["reviewer_verified"] = r["name"] in verified
+	return rows
+
+
 @frappe.whitelist()
 def get_dashboard_data(from_date=None, to_date=None):
 	if not frappe.has_permission("Case Register", ptype="read"):
@@ -57,7 +76,7 @@ def get_dashboard_data(from_date=None, to_date=None):
 		filters["request_date"] = ["<=", to_date]
 
 	rows = frappe.get_list("Case Register", fields=DASHBOARD_FIELDS, filters=filters, limit_page_length=0)
-	return _attach_approved_by(rows)
+	return _attach_reviewer_verified(_attach_approved_by(rows))
 
 
 def _export_rows_for_display(rows):

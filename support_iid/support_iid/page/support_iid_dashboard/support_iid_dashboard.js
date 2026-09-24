@@ -14,11 +14,6 @@ frappe.pages['support-iid-dashboard'].on_page_load = function (wrapper) {
 	new SupportIIDDashboard(page);
 };
 
-
-const TERMINAL_STATUSES = ['Approved', 'Rejected', 'Closed'];
-function is_in_progress(status) {
-	return TERMINAL_STATUSES.indexOf(status) === -1;
-}
 function case_amount(c) {
 	return c.approved_amount || c.funds_requested || 0;
 }
@@ -604,53 +599,51 @@ class SupportIIDDashboard {
 		var self = this;
 
 		var approved_rows = rows.filter((c) => c.case_status === 'Approved' || c.case_status === 'Closed');
-		var declined_rows = rows.filter((c) => c.case_status === 'Rejected');
-		var pending_rows = rows.filter((c) => c.case_status === 'Pending Approval' || c.case_status === 'Final Verification');
+		// Provisional side: first approval round, before the Reviewer has verified.
+		// Final side: with the Reviewer (Final Verification) or back with the approver for the final round.
+		var is_pending_provisional = (c) => c.case_status === 'Pending Approval' && !c.reviewer_verified;
+		var is_pending_final = (c) => c.case_status === 'Final Verification' || (c.case_status === 'Pending Approval' && c.reviewer_verified);
+		var provisional_rows = rows.filter(is_pending_provisional);
+		var final_rows = rows.filter(is_pending_final);
 		var total_approved_value = approved_rows.reduce((s, c) => s + case_amount(c), 0);
-		var total_requested_value = rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
-		var total_declined_value = declined_rows.reduce((s, c) => s + case_amount(c), 0);
-		var total_pending_value = pending_rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
-		var in_progress_rows = rows.filter((c) => is_in_progress(c.case_status));
+		var total_provisional_value = provisional_rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
+		var total_final_value = final_rows.reduce((s, c) => s + (c.funds_requested || 0), 0);
 
 		var financial_cards = [
 			{
-				icon: icon('barChart', 18), label: 'Total Requested Amount', value: format_currency(total_requested_value),
-				sub: rows.length + ' total case(s)',
-				click: () => self.open_drilldown('All cases', () => true, 'financial')
+				icon: icon('clock', 18), label: 'Pending Provisional Approval Amount', value: format_currency(total_provisional_value),
+				sub: provisional_rows.length + ' pending case(s)',
+				click: () => self.open_drilldown('Pending provisional approval cases', is_pending_provisional, 'status_no_approval')
 			},
 			{
-				icon: icon('clock', 18), label: 'Pending for Approval Amount', value: format_currency(total_pending_value),
-				sub: pending_rows.length + ' pending case(s)',
-				click: () => self.open_drilldown('Pending approval cases', (c) => c.case_status === 'Pending Approval' || c.case_status === 'Final Verification', 'status_no_approval')
+				icon: icon('clock', 18), label: 'Pending Final Approval Amount', value: format_currency(total_final_value),
+				sub: final_rows.length + ' pending case(s)',
+				click: () => self.open_drilldown('Pending final approval cases', is_pending_final, 'status_no_approval')
 			},
 			{
 				icon: '₹', label: 'Total Approved Amount', value: format_currency(total_approved_value),
 				sub: approved_rows.length + ' approved/closed case(s)',
 				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved' || c.case_status === 'Closed', 'approved')
-			},
-			{
-				icon: icon('xCircle', 18), label: 'Total Declined Amount', value: format_currency(total_declined_value),
-				sub: declined_rows.length + ' declined case(s)',
-				click: () => self.open_drilldown('Declined cases', (c) => c.case_status === 'Rejected', 'status_no_approval')
 			}
 		];
 
 		var status_list = (this.case_statuses && this.case_statuses.length) ? this.case_statuses : [];
 		var other_rows = rows.filter((c) => status_list.indexOf(c.case_status) === -1);
 
-		var hidden_statuses = ['Closed', 'Withdrawn by the Requester', 'On Hold', 'Sent Back', 'Pending Approval'];
+		// 'Final Verification' is covered by the final approver card below.
+		var hidden_statuses = ['Closed', 'Withdrawn by the Requester', 'On Hold', 'Sent Back', 'Pending Approval', 'Final Verification', 'Rejected'];
 		var displayed_statuses = status_list.filter((s) => hidden_statuses.indexOf(s) === -1);
 
 		var status_cards = [
 			{
-				icon: icon('list', 18), label: 'Total Cases', value: rows.length,
-				sub: 'across all statuses',
-				click: () => self.open_drilldown('All cases', () => true, 'default')
+				icon: icon('clock', 18), label: 'Cases In Progress · Provisional Approval', value: provisional_rows.length,
+				sub: 'awaiting provisional approval',
+				click: () => self.open_drilldown('Cases in progress · provisional approval', is_pending_provisional, 'status_no_approval')
 			},
 			{
-				icon: icon('clock', 18), label: 'Cases In Progress', value: in_progress_rows.length,
-				sub: 'awaiting review, approval, or action',
-				click: () => self.open_drilldown('Cases in progress', (c) => is_in_progress(c.case_status), 'status_no_approval')
+				icon: icon('clock', 18), label: 'Cases In Progress · Final Approval', value: final_rows.length,
+				sub: 'awaiting reviewer or final approval',
+				click: () => self.open_drilldown('Cases in progress · final approval', is_pending_final, 'status_no_approval')
 			}
 		].concat(displayed_statuses.map((s) => {
 			var matches_status = s === 'Approved'
@@ -658,10 +651,11 @@ class SupportIIDDashboard {
 				: (c) => c.case_status === s;
 			var status_rows = rows.filter(matches_status);
 			var preset = s === 'Approved' ? 'approved' : 'status_no_approval';
+			var label = s === 'Approved' ? 'Total Approved Cases' : status_display_label(s);
 			return {
-				icon: icon('tag', 18), label: status_display_label(s), value: status_rows.length,
-				sub: status_rows.length + ' case(s)',
-				click: () => self.open_drilldown(status_display_label(s) + ' cases', matches_status, preset)
+				icon: icon('tag', 18), label: label, value: status_rows.length,
+				sub: s === 'Approved' ? status_rows.length + ' approved/closed case(s)' : status_rows.length + ' case(s)',
+				click: () => self.open_drilldown(s === 'Approved' ? 'Approved cases' : label + ' cases', matches_status, preset)
 			};
 		})).concat(other_rows.length ? [{
 			icon: icon('tag', 18), label: 'Others', value: other_rows.length,
