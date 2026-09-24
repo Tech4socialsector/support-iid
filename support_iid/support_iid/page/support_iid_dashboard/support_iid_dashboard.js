@@ -143,36 +143,6 @@ function get_current_stage(doc) {
 	return null;
 }
 
-function month_key(date_str) {
-	if (!date_str) return null;
-	return date_str.slice(0, 7);
-}
-function quarter_key(date_str) {
-	if (!date_str) return null;
-	var y = date_str.slice(0, 4);
-	var m = parseInt(date_str.slice(5, 7), 10);
-	return y + '-Q' + Math.ceil(m / 3);
-}
-function year_key(date_str) {
-	if (!date_str) return null;
-	return date_str.slice(0, 4);
-}
-function period_key(date_str, granularity) {
-	if (granularity === 'quarter') return quarter_key(date_str);
-	if (granularity === 'year') return year_key(date_str);
-	return month_key(date_str);
-}
-function period_label(key, granularity) {
-	if (!key) return '—';
-	if (granularity === 'month') {
-		var parts = key.split('-');
-		var d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
-		return d.toLocaleString('en-US', { month: 'short' }) + " '" + parts[0].slice(2);
-	}
-	if (granularity === 'quarter') return key.replace('-', ' ');
-	return key;
-}
-
 const INDIA_LOCATION_URL = 'https://raw.githubusercontent.com/sab99r/Indian-States-And-Districts/master/states-and-districts.json';
 
 class SupportIIDDashboard {
@@ -180,7 +150,6 @@ class SupportIIDDashboard {
 		this.page = page;
 		this.wrapper = $(page.body);
 		this.rows = [];
-		this.trend_granularity = 'year';
 		this.india_locations = null; // { states: [{state, districts}] } once loaded
 
 		this.inject_styles();
@@ -312,30 +281,6 @@ class SupportIIDDashboard {
 			.sd-bar-row-value { color:var(--text-muted,#8d99a6); }
 			.sd-bar-track { height:10px; background:var(--control-bg,#eef0f2); border-radius:6px; overflow:hidden; }
 			.sd-bar-fill { height:100%; border-radius:6px; transition:width .2s; }
-
-			.sd-trend-toggle { display:flex; gap:4px; }
-			.sd-trend-toggle button {
-				border:1px solid var(--border-color,#d1d8dd); background:var(--card-bg,#fff); padding:5px 12px; font-size:12px;
-				cursor:pointer; color:var(--text-muted,#8d99a6); font-weight:600; transition:background .12s, color .12s;
-			}
-			.sd-trend-toggle button:hover { background:var(--control-bg,#f4f5f7); }
-			.sd-trend-toggle button:first-child { border-radius:8px 0 0 8px; }
-			.sd-trend-toggle button:last-child { border-radius:0 8px 8px 0; }
-			.sd-trend-toggle button.on { background:var(--primary,#2490ef); color:#fff; border-color:var(--primary,#2490ef); }
-			.sd-trend-chart { display:flex; align-items:flex-end; gap:14px; height:180px; margin-top:16px; overflow-x:auto; padding-bottom:4px; }
-			.sd-trend-col { display:flex; flex-direction:column; align-items:center; min-width:44px; flex-shrink:0; height:100%; justify-content:flex-end; cursor:pointer; }
-			.sd-trend-bars { display:flex; align-items:flex-end; gap:3px; height:140px; }
-			.sd-trend-bar { width:14px; border-radius:3px 3px 0 0; }
-			.sd-trend-bar-count { background:#2490ef; }
-			.sd-trend-bar-amount { background:#2f9e5b; }
-			.sd-trend-col-label { font-size:10.5px; color:var(--text-muted,#8d99a6); margin-top:6px; white-space:nowrap; }
-			.sd-trend-legend { display:flex; gap:16px; font-size:12px; color:var(--text-muted,#8d99a6); margin-top:14px; }
-			.sd-trend-legend span { display:inline-flex; align-items:center; gap:6px; }
-			.sd-trend-legend i { width:9px; height:9px; border-radius:2px; display:inline-block; }
-			.sd-trend-grid { display:grid; grid-template-columns:1fr; gap:16px; }
-			@media (min-width: 900px) { .sd-trend-grid { grid-template-columns:1fr 1fr; } }
-			.sd-trend-section { margin-top:18px; }
-			.sd-trend-section-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
 
 			.sd-modal-backdrop { position:fixed; inset:0; background:rgba(15,18,22,.55); z-index:1200; display:flex; align-items:center; justify-content:center; padding:30px; }
 			.sd-modal { background:var(--card-bg,#fff); border-radius:14px; max-width:1200px; width:96vw; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 20px 60px rgba(0,0,0,.3), 0 2px 6px rgba(0,0,0,.08); transition:max-width .15s; }
@@ -537,34 +482,6 @@ class SupportIIDDashboard {
 				<div class="sd-section-heading" style="margin-top:22px">Financial Summary</div>
 				<div class="sd-metrics-grid" id="sd-metrics-financial"></div>
 
-				<div class="sd-trend-section">
-					<div class="sd-trend-section-head">
-						<span class="sd-section-heading" style="margin:0">Analysis</span>
-						<div class="sd-trend-toggle" id="sd-trend-toggle">
-							<button data-g="month" data-tooltip="Group by month">Monthly</button>
-							<button data-g="quarter" data-tooltip="Group by quarter">Quarterly</button>
-							<button data-g="year" class="on" data-tooltip="Group by year">Yearly</button>
-						</div>
-					</div>
-					<div class="sd-trend-grid">
-						<div class="sd-chart-panel">
-							<div class="sd-chart-title">Case Numbers &amp; Approved Funds</div>
-							<div id="sd-trend-chart" style="overflow:hidden"></div>
-							<div class="sd-trend-legend" id="sd-trend-legend-1">
-								<span><i style="background:#2490ef"></i> Case count</span>
-								<span><i style="background:#2f9e5b"></i> Approved funds</span>
-							</div>
-						</div>
-						<div class="sd-chart-panel">
-							<div class="sd-chart-title">Approved vs Declined Cases</div>
-							<div class="sd-trend-chart" id="sd-trend-chart-2"></div>
-							<div class="sd-trend-legend">
-								<span><i style="background:#2f9e5b"></i> Approved</span>
-								<span><i style="background:#e0524c"></i> Declined</span>
-							</div>
-						</div>
-					</div>
-				</div>
 			</div>
 		`);
 
@@ -654,13 +571,6 @@ class SupportIIDDashboard {
 			self.upto_control.set_value('');
 			self.apply_filters();
 		});
-		this.wrapper.on('click', '#sd-trend-toggle button', function () {
-			self.wrapper.find('#sd-trend-toggle button').removeClass('on');
-			$(this).addClass('on');
-			self.trend_granularity = $(this).data('g');
-			self.render_trend_chart();
-			self.render_trend_chart_2();
-		});
 	}
 
 	load_data() {
@@ -694,8 +604,6 @@ class SupportIIDDashboard {
 			return true;
 		});
 		this.render_metrics();
-		this.render_trend_chart();
-		this.render_trend_chart_2();
 	}
 
 	// ---------------- Key Metrics ----------------
@@ -739,7 +647,8 @@ class SupportIIDDashboard {
 		var status_list = (this.case_statuses && this.case_statuses.length) ? this.case_statuses : [];
 		var other_rows = rows.filter((c) => status_list.indexOf(c.case_status) === -1);
 
-		var displayed_statuses = status_list.filter((s) => s !== 'Closed');
+		var hidden_statuses = ['Closed', 'Withdrawn by the Requester', 'On Hold', 'Sent Back', 'Pending Approval'];
+		var displayed_statuses = status_list.filter((s) => hidden_statuses.indexOf(s) === -1);
 
 		var status_cards = [
 			{
@@ -792,205 +701,6 @@ class SupportIIDDashboard {
 	}
 
 	// ---------------- Charts: Cases by Status + Financial Tracking ----------------
-
-	// ---------------- Trend Analysis (Monthly / Quarterly / Yearly) ----------------
-
-	render_trend_chart() {
-		if ((this.trend_granularity || 'month') === 'year') {
-			this.render_year_over_year_chart();
-			return;
-		}
-
-		var self = this;
-		var g = this.trend_granularity || 'month';
-		var groups = {};
-
-		this.wrapper.find('#sd-trend-legend-1').html(
-			'<span><i style="background:#2490ef"></i> Case count</span>' +
-			'<span><i style="background:#2f9e5b"></i> Approved funds</span>'
-		);
-
-		this.rows.forEach((c) => {
-			var key = period_key(c.request_date, g);
-			if (!key) return;
-			if (!groups[key]) groups[key] = { count: 0, amount: 0 };
-			groups[key].count += 1;
-			if (c.case_status === 'Approved') groups[key].amount += case_amount(c);
-		});
-
-		var keys = Object.keys(groups).sort();
-		if (!keys.length) {
-			this.wrapper.find('#sd-trend-chart').html('<div class="sd-empty-note">No case data yet.</div>');
-			return;
-		}
-
-		var W = 560, H = 160, padL = 10, padR = 10, padT = 10, padB = 28;
-		var cW = W - padL - padR, cH = H - padT - padB;
-		var n = keys.length;
-		var maxCount = Math.max.apply(null, keys.map((k) => groups[k].count).concat([1]));
-		var maxAmount = Math.max.apply(null, keys.map((k) => groups[k].amount).concat([1]));
-
-		function px(i) { return padL + (n < 2 ? cW / 2 : (i / (n - 1)) * cW); }
-		function pyCount(v) { return padT + cH - (v / maxCount) * cH; }
-		function pyAmount(v) { return padT + cH - (v / maxAmount) * cH; }
-
-		var countPts = keys.map((k, i) => px(i) + ',' + pyCount(groups[k].count)).join(' ');
-		var amountPts = keys.map((k, i) => px(i) + ',' + pyAmount(groups[k].amount)).join(' ');
-
-		var gridLines = [0.25, 0.5, 0.75].map((f) => {
-			var y = padT + cH * (1 - f);
-			return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#eef0f2" stroke-width="1"/>`;
-		}).join('');
-
-		var countDots = keys.map((k, i) =>
-			`<circle cx="${px(i)}" cy="${pyCount(groups[k].count)}" r="4" fill="#2490ef" style="cursor:pointer" data-period="${frappe.utils.escape_html(k)}">
-				<title>${frappe.utils.escape_html(period_label(k, g))}: ${groups[k].count} case(s)</title>
-			</circle>`).join('');
-		var amountDots = keys.map((k, i) =>
-			`<circle cx="${px(i)}" cy="${pyAmount(groups[k].amount)}" r="4" fill="#2f9e5b" style="cursor:pointer" data-period="${frappe.utils.escape_html(k)}">
-				<title>${frappe.utils.escape_html(period_label(k, g))}: ${format_currency(groups[k].amount)} approved</title>
-			</circle>`).join('');
-
-		var step = n <= 12 ? 1 : Math.ceil(n / 8);
-		var xLabels = keys.map((k, i) => {
-			if (i % step !== 0 && i !== n - 1) return '';
-			return `<text x="${px(i)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#8d99a6">${frappe.utils.escape_html(period_label(k, g))}</text>`;
-		}).join('');
-
-		var svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="160" style="display:block;overflow:visible">
-			${gridLines}
-			<polyline points="${amountPts}" fill="none" stroke="#2f9e5b" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-			<polyline points="${countPts}" fill="none" stroke="#2490ef" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
-			${amountDots}${countDots}
-			${xLabels}
-		</svg>`;
-
-		this.wrapper.find('#sd-trend-chart').html(svg);
-		this.wrapper.find('#sd-trend-chart svg circle').on('click', function () {
-			var period = $(this).data('period');
-			if (period) self.open_drilldown('Period · ' + period_label(period, g), (c) => period_key(c.request_date, g) === period, 'period');
-		});
-	}
-
-	render_year_over_year_chart() {
-		var self = this;
-		var month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-		var years = {};
-
-		this.rows.forEach((c) => {
-			if (c.case_status !== 'Approved' || !c.request_date) return;
-			var year = c.request_date.slice(0, 4);
-			var month = parseInt(c.request_date.slice(5, 7), 10);
-			if (!month) return;
-			if (!years[year]) years[year] = Array(12).fill(0);
-			years[year][month - 1] += case_amount(c);
-		});
-
-		var year_keys = Object.keys(years).sort();
-		if (!year_keys.length) {
-			this.wrapper.find('#sd-trend-chart').html('<div class="sd-empty-note">No case data yet.</div>');
-			this.wrapper.find('#sd-trend-legend-1').html('');
-			return;
-		}
-
-		var W = 560, H = 160, padL = 10, padR = 10, padT = 10, padB = 28;
-		var cW = W - padL - padR, cH = H - padT - padB;
-		var maxAmount = Math.max.apply(null, year_keys.flatMap((y) => years[y]).concat([1]));
-
-		function px(i) { return padL + (i / 11) * cW; }
-		function py(v) { return padT + cH - (v / maxAmount) * cH; }
-
-		var gridLines = [0.25, 0.5, 0.75].map((f) => {
-			var y = padT + cH * (1 - f);
-			return `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="#eef0f2" stroke-width="1"/>`;
-		}).join('');
-
-		var xLabels = month_names.map((m, i) =>
-			`<text x="${px(i)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#8d99a6">${m}</text>`
-		).join('');
-
-		var lines = '', dots = '';
-		year_keys.forEach((year, yi) => {
-			var color = YEAR_LINE_COLORS[yi % YEAR_LINE_COLORS.length];
-			var pts = years[year].map((v, i) => px(i) + ',' + py(v)).join(' ');
-			lines += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`;
-			dots += years[year].map((v, i) =>
-				`<circle cx="${px(i)}" cy="${py(v)}" r="4" fill="${color}" style="cursor:pointer" data-year="${frappe.utils.escape_html(year)}" data-month="${i + 1}">
-					<title>${month_names[i]} ${frappe.utils.escape_html(year)}: ${format_currency(v)} approved</title>
-				</circle>`
-			).join('');
-		});
-
-		var svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="160" style="display:block;overflow:visible">
-			${gridLines}
-			${lines}
-			${dots}
-			${xLabels}
-		</svg>`;
-
-		this.wrapper.find('#sd-trend-chart').html(svg);
-		this.wrapper.find('#sd-trend-chart svg circle').on('click', function () {
-			var year = $(this).data('year');
-			var month = $(this).data('month');
-			self.open_drilldown(month_names[month - 1] + ' ' + year + ' · Approved cases', (c) =>
-				c.case_status === 'Approved' &&
-				c.request_date && c.request_date.slice(0, 4) === String(year) &&
-				parseInt(c.request_date.slice(5, 7), 10) === month,
-				'approved'
-			);
-		});
-
-		var legend = year_keys.map((year, yi) =>
-			`<span><i style="background:${YEAR_LINE_COLORS[yi % YEAR_LINE_COLORS.length]}"></i> ${frappe.utils.escape_html(year)}</span>`
-		).join('');
-		this.wrapper.find('#sd-trend-legend-1').html(legend);
-	}
-
-	render_trend_chart_2() {
-		var self = this;
-		var g = this.trend_granularity || 'month';
-		var groups = {};
-
-		this.rows.forEach((c) => {
-			var key = period_key(c.request_date, g);
-			if (!key) return;
-			if (!groups[key]) groups[key] = { approved: 0, declined: 0 };
-			if (c.case_status === 'Approved') groups[key].approved += 1;
-			if (c.case_status === 'Rejected') groups[key].declined += 1;
-		});
-
-		var keys = Object.keys(groups).sort();
-		if (!keys.length) {
-			this.wrapper.find('#sd-trend-chart-2').html('<div class="sd-empty-note">No case data yet.</div>');
-			return;
-		}
-
-		var max = Math.max.apply(null, keys.map((k) => Math.max(groups[k].approved, groups[k].declined)).concat([1]));
-
-		var html = keys.map((k) => {
-			var approvedPct = Math.max(4, Math.round((groups[k].approved / max) * 100));
-			var declinedPct = Math.max(4, Math.round((groups[k].declined / max) * 100));
-			return `
-				<div class="sd-trend-col" data-period="${frappe.utils.escape_html(k)}"
-					title="${frappe.utils.escape_html(period_label(k, g))}: ${groups[k].approved} approved, ${groups[k].declined} declined">
-					<div class="sd-trend-bars">
-						<div class="sd-trend-bar" style="height:${approvedPct}%;background:#2f9e5b"></div>
-						<div class="sd-trend-bar" style="height:${declinedPct}%;background:#e0524c"></div>
-					</div>
-					<div class="sd-trend-col-label">${frappe.utils.escape_html(period_label(k, g))}</div>
-				</div>
-			`;
-		}).join('');
-
-		this.wrapper.find('#sd-trend-chart-2').html(html);
-		this.wrapper.find('#sd-trend-chart-2 .sd-trend-col').on('click', function () {
-			var period = $(this).data('period');
-			self.open_drilldown('Period · ' + period_label(period, g), (c) =>
-				period_key(c.request_date, g) === period && (c.case_status === 'Approved' || c.case_status === 'Rejected'),
-				'period');
-		});
-	}
-
 	// ---------------- Drill-down popup (list <-> detail, in the SAME modal) ----------------
 
 	open_drilldown(title, filterFn, column_preset) {
