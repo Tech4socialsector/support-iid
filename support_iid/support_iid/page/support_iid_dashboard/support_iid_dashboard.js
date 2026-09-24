@@ -14,6 +14,11 @@ frappe.pages['support-iid-dashboard'].on_page_load = function (wrapper) {
 	new SupportIIDDashboard(page);
 };
 
+// Financial Summary cards: full rupee figure, or compact crores (1 Cr = 1,00,00,000).
+function format_summary_amount(value, show_full) {
+	if (show_full) return format_currency(value);
+	return '₹ ' + ((value || 0) / 10000000).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' Cr';
+}
 function case_amount(c) {
 	return c.approved_amount || c.funds_requested || 0;
 }
@@ -145,6 +150,8 @@ class SupportIIDDashboard {
 		this.page = page;
 		this.wrapper = $(page.body);
 		this.rows = [];
+		this.show_full_amounts = true;
+		try { this.show_full_amounts = localStorage.getItem('sd_show_full_amounts') !== '0'; } catch (e) { /* storage blocked */ }
 		this.india_locations = null; // { states: [{state, districts}] } once loaded
 
 		this.inject_styles();
@@ -163,6 +170,10 @@ class SupportIIDDashboard {
 			.sd-toolbar .sd-spacer { flex:1; }
 
 			.sd-section-heading { font-size:15px; font-weight:700; margin:0 0 14px; color:var(--text-color,#1a1a1a); }
+			.sd-section-head-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:22px 0 14px; }
+			.sd-section-head-row .sd-section-heading { margin:0; }
+			.sd-amount-toggle { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted,#8d99a6); cursor:pointer; margin:0; user-select:none; }
+			.sd-amount-toggle input { margin:0; cursor:pointer; }
 
 			/* Filter fields sit directly on the page — no card surface. */
 			.sd-filter-bar { margin-bottom:22px; }
@@ -465,7 +476,12 @@ class SupportIIDDashboard {
 				<div class="sd-section-heading">Case Overview</div>
 				<div class="sd-metrics-grid" id="sd-metrics-status"></div>
 
-				<div class="sd-section-heading" style="margin-top:22px">Financial Summary</div>
+				<div class="sd-section-head-row">
+					<div class="sd-section-heading">Financial Summary</div>
+					<label class="sd-amount-toggle" data-tooltip="Uncheck to show amounts in crores">
+						<input type="checkbox" id="sd-amount-full"${this.show_full_amounts ? ' checked' : ''}> Show full amount
+					</label>
+				</div>
 				<div class="sd-metrics-grid" id="sd-metrics-financial"></div>
 
 			</div>
@@ -548,6 +564,11 @@ class SupportIIDDashboard {
 	bind_events() {
 		var self = this;
 		this.wrapper.on('click', '#sd-refresh', function () { self.load_data(); });
+		this.wrapper.on('change', '#sd-amount-full', function () {
+			self.show_full_amounts = this.checked;
+			try { localStorage.setItem('sd_show_full_amounts', this.checked ? '1' : '0'); } catch (e) { /* storage blocked */ }
+			self.render_metrics();
+		});
 		this.wrapper.on('change', '#sd-f-source, #sd-f-type, #sd-f-state, #sd-f-district', function () {
 			self.apply_filters();
 		});
@@ -611,17 +632,17 @@ class SupportIIDDashboard {
 
 		var financial_cards = [
 			{
-				icon: icon('clock', 18), label: 'Pending Provisional Approval Amount', value: format_currency(total_provisional_value),
+				icon: icon('clock', 18), label: 'Pending Provisional Approval Amount', value: format_summary_amount(total_provisional_value, this.show_full_amounts),
 				sub: provisional_rows.length + ' pending case(s)',
 				click: () => self.open_drilldown('Pending provisional approval cases', is_pending_provisional, 'status_no_approval')
 			},
 			{
-				icon: icon('clock', 18), label: 'Pending Final Approval Amount', value: format_currency(total_final_value),
+				icon: icon('clock', 18), label: 'Pending Final Approval Amount', value: format_summary_amount(total_final_value, this.show_full_amounts),
 				sub: final_rows.length + ' pending case(s)',
 				click: () => self.open_drilldown('Pending final approval cases', is_pending_final, 'status_no_approval')
 			},
 			{
-				icon: '₹', label: 'Total Approved Amount', value: format_currency(total_approved_value),
+				icon: '₹', label: 'Total Approved Amount', value: format_summary_amount(total_approved_value, this.show_full_amounts),
 				sub: approved_rows.length + ' approved/closed case(s)',
 				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved' || c.case_status === 'Closed', 'approved')
 			}
