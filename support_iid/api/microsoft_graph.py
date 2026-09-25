@@ -322,7 +322,7 @@ def get_manager_chain(email: str, headers: dict, max_depth: int = 3) -> list:
 
 
 @frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=20, seconds=60 * 60)
+@rate_limit(limit=40, seconds=60 * 60)
 def get_employee_details(email, funds_requested=None):
 	email = (email or "").strip()
 

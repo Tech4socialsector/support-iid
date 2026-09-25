@@ -35,6 +35,73 @@ CASE_APPROVAL_LEVEL_REVIEWER = "Final Verification"
 CASE_STATUS_FINAL_VERIFICATION = "Final Verification"
 CASE_STATUS_WITHDRAWN = "Withdrawn by the Requester"
 
+# Set as current_approval_level (case_status stays Pending Approval) once every
+# row in case_approval_stage has approved the provisional request, while the
+# requester fills in the rest of the case before it goes to Final Verification.
+CASE_APPROVAL_LEVEL_FULL_DETAILS = "Full Details Pending"
+
+# Asked only after provisional approval. Mirrors _CASE_REGISTER_FULL_DETAIL_FIELDS
+# in case_register.js — keep the two in sync.
+FULL_DETAIL_FIELDS = (
+	"family_details",
+	"state",
+	"district",
+	"employment_status",
+	"primary_contact_mobile",
+	"hospital_institution_name",
+	"hospital_institution_location",
+	"ailment__course_details",
+	"treatment",
+	"reviewer_case_diagnosis",
+	"amount_already_spent",
+	"annual_family_income",
+	"residence_type",
+	"insurance_type",
+	"insurance_coverage_details",
+	"physical_verification",
+	"physical_verification_notes",
+	"vulnerability_assessment",
+	"milaap_campaign_link",
+)
+
+FULL_DETAIL_REQUIRED_FIELDS = (
+	"family_details",
+	"employment_status",
+	"hospital_institution_name",
+	"hospital_institution_location",
+	"ailment__course_details",
+	"annual_family_income",
+	"residence_type",
+	"physical_verification",
+)
+
+
+def is_provisionally_approved(doc):
+	"""
+	True once every row in case_approval_stage has approved. A Reviewer
+	action in the log also counts, because the final round resets the last
+	stage to "Awaiting For Approval" (reviewer_final_approval), and the case
+	must not lock its full details again at that point.
+	"""
+	stages = doc.get("case_approval_stage") or []
+	if stages and all((s.get("case_approval_status") or "").strip() == "Approve" for s in stages):
+		return True
+	return any(
+		(log.get("action") or "") in ("Reviewer Approve", "Reviewer Send Back")
+		for log in (doc.get("case_approval_log") or [])
+	)
+
+
+def _missing_full_details(doc):
+	required = list(FULL_DETAIL_REQUIRED_FIELDS)
+	if (doc.get("type_of_request") or "") == "Medical":
+		required.append("treatment")
+	if doc.get("insurance_type") and doc.get("insurance_type") != "No Insurance":
+		required.append("insurance_coverage_details")
+	if doc.get("physical_verification") == "Yes":
+		required.append("physical_verification_notes")
+	return [doc.meta.get_label(f) for f in required if doc.get(f) in (None, "")]
+
 CASE_STATUS_DISPLAY_LABELS = {
 	CASE_STATUS_SENT_BACK: "Pending with Requester",
 	CASE_STATUS_REJECTED: "Declined",
@@ -1645,6 +1712,16 @@ class CaseRegister(Document):
 				f"and is now awaiting one last confirmation from the approving "
 				f"team before it is marked Approved."
 			)
+		elif action == "Approve" and next_level_label == CASE_APPROVAL_LEVEL_FULL_DETAILS:
+			subject = f"Provisional Approval - [{self.name}] - {beneficiary}"
+			heading = "**Your case has been provisionally approved.**"
+			body_extra = (
+				f"The support request for {beneficiary or 'the beneficiary'} "
+				f"has been approved at every approval level, most recently by "
+				f"**{approver_name or 'the review team'}**. Please open the case "
+				f"and fill in the remaining details so it can go for final approval."
+			)
+			action_line = f"[[Fill in Full Details]]({get_url()}/desk/case-register/{self.name})"
 		elif action == "Approve" and next_level_label:
 			subject = f"Provisional Approval - [{self.name}] - {beneficiary}"
 			heading = "**Your case has moved to the next approval level.**"
@@ -2141,18 +2218,24 @@ def process_case_approval(
 					comments=comments,
 					approver_name=approver_name,
 				)
-			else:
-				doc.case_status = CASE_STATUS_FINAL_VERIFICATION
-				doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
+			elif _missing_full_details(doc):
+				# Provisional approval complete — the requester now fills in
+				# the rest of the case (submit_full_details) before it goes
+				# to Final Verification.
+				doc.case_status = CASE_STATUS_PENDING
+				doc.current_approval_level = CASE_APPROVAL_LEVEL_FULL_DETAILS
 				doc.save(ignore_permissions=True)
 				_safe_commit(case_name)
 				doc._send_requestor_notification_email(
 					action="Approve",
 					comments=comments,
 					approver_name=approver_name,
-					next_level_label=CASE_APPROVAL_LEVEL_REVIEWER,
+					next_level_label=CASE_APPROVAL_LEVEL_FULL_DETAILS,
 				)
-				_notify_reviewers_of_provisional_approval(doc, approver_name, comments)
+			else:
+				# Full details already present (e.g. a case registered before
+				# the provisional flow existed) — straight to Final Verification.
+				_move_to_final_verification(doc, approver_name, comments)
 
 	result = {
 		"case_status": doc.case_status,
@@ -2513,6 +2596,79 @@ def submit_case(case_name):
 	doc.save()
 	doc._fire_submission_workflow()
 	frappe.db.commit()
+	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
+
+
+def _move_to_final_verification(doc, approver_name, comments=None):
+	doc.case_status = CASE_STATUS_FINAL_VERIFICATION
+	doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
+	doc.save(ignore_permissions=True)
+	_safe_commit(doc.name)
+	doc._send_requestor_notification_email(
+		action="Approve",
+		comments=comments,
+		approver_name=approver_name,
+		next_level_label=CASE_APPROVAL_LEVEL_REVIEWER,
+	)
+	_notify_reviewers_of_provisional_approval(doc, approver_name, comments)
+
+
+@frappe.whitelist()
+def submit_full_details(case_name):
+	"""
+	Second half of registration: after every approval stage has approved the
+	provisional request, the requester fills in the remaining fields and
+	sends the case on to Final Verification (then final approval, as before).
+	"""
+	doc = frappe.get_doc("Case Register", case_name)
+
+	user = frappe.session.user
+	if not (
+		user == "Administrator"
+		or "System Manager" in frappe.get_roles(user)
+		or (doc.requestor_email or "").strip().lower() == user.strip().lower()
+	):
+		frappe.throw("You don't have permission to submit details for this case.", frappe.PermissionError)
+
+	if not (
+		doc.case_status == CASE_STATUS_PENDING
+		and doc.current_approval_level == CASE_APPROVAL_LEVEL_FULL_DETAILS
+		and is_provisionally_approved(doc)
+	):
+		frappe.throw("This case is not awaiting full details.")
+
+	if not frappe.db.get_single_value("Support IID Settings", "disable_case_register_mandatory_fields"):
+		missing = _missing_full_details(doc)
+		if missing:
+			frappe.throw(
+				"Please fill in the following before submitting: " + ", ".join(missing),
+				title="Missing Details",
+			)
+
+	stages = doc.get("case_approval_stage") or []
+	last_approver_name = (stages[-1].approver_name if stages else None) or ""
+
+	doc.append(
+		"case_approval_log",
+		{
+			"date": today(),
+			"level": CASE_APPROVAL_LEVEL_FULL_DETAILS,
+			"approver_name": doc.requestor_name or "",
+			"approver_name_email": doc.requestor_email or "",
+			"action": "Full Details Submitted",
+			"comments": "",
+		},
+	)
+	doc.case_status = CASE_STATUS_FINAL_VERIFICATION
+	doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
+	doc.save(ignore_permissions=True)
+	_safe_commit(case_name)
+
+	doc._rename_supporting_documents()
+	# The PDF made at first submission only had the provisional fields.
+	doc._generate_and_save_pdf(force=True)
+	_notify_reviewers_of_provisional_approval(doc, last_approver_name)
+
 	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
 
 

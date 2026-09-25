@@ -269,7 +269,7 @@ frappe.ui.form.on("Case Register", {
 	}, 800),
 
 	type_of_request(frm) {
-		apply_request_type_labels(frm, frm.doc.type_of_request);
+		apply_full_details_visibility(frm);
 		if (!frm.doc.type_of_request) return;
 		load_documents_for(frm, frm.doc.type_of_request);
 	},
@@ -377,9 +377,7 @@ frappe.ui.form.on("Case Register", {
 		mark_mandatory_document_rows(frm);
 		setup_supporting_document_preview(frm);
 		force_private_attachments(frm);
-		apply_request_type_labels(frm, frm.doc.type_of_request);
-		apply_insurance_visibility(frm, frm.doc.insurance_type);
-		apply_verification_visibility(frm, frm.doc.physical_verification);
+		apply_full_details_visibility(frm);
 
 		var current_roles = frappe.user_roles || [];
 		var can_edit_approval_stage =
@@ -391,6 +389,7 @@ frappe.ui.form.on("Case Register", {
 		apply_approver_read_only_view(frm);
 		apply_approver_action_button(frm);
 		apply_reviewer_final_approval_button(frm);
+		apply_full_details_submit_button(frm);
 		apply_case_status_indicator(frm);
 		case_register_resync_stale_roles(frm);
 
@@ -457,6 +456,152 @@ function apply_draft_resave_toggle(frm) {
 			frm.page.set_indicator(__("Not Saved"), "orange");
 		}
 	});
+}
+
+const CASE_APPROVAL_LEVEL_FULL_DETAILS = "Full Details Pending";
+
+// Asked only after provisional approval. Mirrors FULL_DETAIL_FIELDS in
+// case_register.py — keep the two in sync.
+const _CASE_REGISTER_FULL_DETAIL_FIELDS = [
+	"family_details",
+	"state",
+	"district",
+	"employment_status",
+	"primary_contact_mobile",
+	"hospital_institution_name",
+	"hospital_institution_location",
+	"ailment__course_details",
+	"treatment",
+	"reviewer_case_diagnosis",
+	"amount_already_spent",
+	"annual_family_income",
+	"residence_type",
+	"insurance_type",
+	"insurance_coverage_details",
+	"physical_verification",
+	"physical_verification_notes",
+	"vulnerability_assessment",
+	"milaap_campaign_link",
+];
+
+const _CASE_REGISTER_FULL_DETAIL_REQUIRED_FIELDS = [
+	"family_details",
+	"employment_status",
+	"hospital_institution_name",
+	"hospital_institution_location",
+	"ailment__course_details",
+	"annual_family_income",
+	"residence_type",
+	"physical_verification",
+];
+
+// Asked at registration; locked while the requester fills in full details so
+// e.g. a funds_requested change can't re-fetch (and wipe) the approved stages.
+const _CASE_REGISTER_PROVISIONAL_FIELDS = [
+	"requestor_email",
+	"type_of_request",
+	"beneficiary_name",
+	"age",
+	"gender",
+	"mobile_number",
+	"location",
+	"note_about_the_individual",
+	"funds_requested",
+];
+
+// Mirrors is_provisionally_approved() in case_register.py.
+function case_register_is_provisionally_approved(frm) {
+	var stages = frm.doc.case_approval_stage || [];
+	var all_approved =
+		stages.length > 0 &&
+		stages.every(function (s) {
+			return (s.case_approval_status || "").trim() === "Approve";
+		});
+	if (all_approved) return true;
+	return (frm.doc.case_approval_log || []).some(function (log) {
+		return log.action === "Reviewer Approve" || log.action === "Reviewer Send Back";
+	});
+}
+
+function case_register_awaiting_full_details(frm) {
+	return (
+		!frm.is_new() &&
+		frm.doc.case_status === "Pending Approval" &&
+		frm.doc.current_approval_level === CASE_APPROVAL_LEVEL_FULL_DETAILS &&
+		case_register_is_provisionally_approved(frm)
+	);
+}
+
+function apply_full_details_visibility(frm) {
+	// Cases registered before the provisional flow already carry full
+	// details — keep those visible instead of hiding filled-in data.
+	var has_legacy_details = _CASE_REGISTER_FULL_DETAIL_REQUIRED_FIELDS.some(function (fieldname) {
+		return !!frm.doc[fieldname];
+	});
+	var unlocked = case_register_is_provisionally_approved(frm) || has_legacy_details;
+
+	_CASE_REGISTER_FULL_DETAIL_FIELDS.forEach(function (fieldname) {
+		frm.set_df_property(fieldname, "hidden", unlocked ? 0 : 1);
+		frm.set_df_property(fieldname, "reqd", 0);
+	});
+
+	if (unlocked) {
+		_CASE_REGISTER_FULL_DETAIL_REQUIRED_FIELDS.forEach(function (fieldname) {
+			frm.set_df_property(fieldname, "reqd", 1);
+		});
+		// These re-hide / re-require their own dependent fields.
+		apply_request_type_labels(frm, frm.doc.type_of_request);
+		apply_insurance_visibility(frm, frm.doc.insurance_type);
+		apply_verification_visibility(frm, frm.doc.physical_verification);
+	}
+
+	var lock_provisional = case_register_awaiting_full_details(frm);
+	_CASE_REGISTER_PROVISIONAL_FIELDS.forEach(function (fieldname) {
+		frm.set_df_property(fieldname, "read_only", lock_provisional ? 1 : 0);
+	});
+
+	_CASE_REGISTER_FULL_DETAIL_FIELDS.concat(_CASE_REGISTER_PROVISIONAL_FIELDS).forEach(function (fieldname) {
+		frm.refresh_field(fieldname);
+	});
+}
+
+function apply_full_details_submit_button(frm) {
+	if (!case_register_awaiting_full_details(frm)) return;
+
+	var roles = frappe.user_roles || [];
+	var user = frappe.session.user;
+	var can_submit =
+		user === "Administrator" ||
+		roles.includes("System Manager") ||
+		(frm.doc.requestor_email || "").trim().toLowerCase() === user.toLowerCase();
+	if (!can_submit) return;
+
+	frm.page.set_primary_action(__("Submit Full Details"), () => submit_full_details(frm));
+}
+
+function submit_full_details(frm) {
+	case_register_branded_confirm(
+		__("Submit the full case details? The case will go for Final Verification and final approval."),
+		__("I confirm the information in this case is accurate to the best of my knowledge."),
+		function () {
+			var do_submit = function () {
+				case_register_call_with_loader({
+					method: "support_iid.support_iid.doctype.case_register.case_register.submit_full_details",
+					args: { case_name: frm.doc.name },
+					freeze_message: __("Submitting..."),
+					callback: function () {
+						frm.reload_doc();
+						frappe.show_alert({ message: __("Full details submitted for final approval."), indicator: "green" });
+					},
+				});
+			};
+			if (frm.is_dirty()) {
+				frm.save().then(do_submit);
+			} else {
+				do_submit();
+			}
+		}
+	);
 }
 
 // Mirrors applyInsuranceVisibility() in support_iid_case_registration.js.
@@ -863,6 +1008,10 @@ function apply_requester_post_submit_view(frm) {
 		return;
 	}
 
+	// Provisionally approved — the form stays editable for the rest of the
+	// details (apply_full_details_submit_button sets the primary action).
+	if (case_register_awaiting_full_details(frm)) return;
+
 	frm.disable_save();
 	frm.disable_form();
 
@@ -1069,6 +1218,8 @@ function apply_case_status_indicator(frm) {
 	if (frm.is_new()) return;
 	if (frm.doc.case_status === "Final Verification") {
 		frm.page.set_indicator(__("Pending with Reviewer"), "orange");
+	} else if (case_register_awaiting_full_details(frm)) {
+		frm.page.set_indicator(__("Provisionally Approved — Full Details Pending"), "orange");
 	}
 }
 

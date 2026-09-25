@@ -3,7 +3,7 @@
  "allow_bulk_edit": 1,
  "allow_import": 1,
  "autoname": "SIID-.#######",
- "creation": "2026-07-17 23:19:17.680202",
+ "creation": "2026-09-24 17:51:28.531763",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
@@ -24,23 +24,16 @@
   "beneficiary_name",
   "age",
   "mobile_number",
-  "qualification",
-  "marital_status",
-  "pincode",
-  "state",
-  "primary_contact_person",
+  "family_details",
   "column_break_cspa",
-  "date_of_birth",
   "gender",
-  "email",
   "employment_status",
-  "address_line_1",
+  "state",
+  "location",
   "district",
   "primary_contact_mobile",
   "section_break_ejlu",
   "note_about_the_individual",
-  "family_members_details_section",
-  "family_members",
   "request_details_section",
   "hospital_institution_name",
   "hospital_institution_location",
@@ -52,17 +45,13 @@
   "amount_already_spent",
   "financial_information_insurance_section",
   "annual_family_income",
-  "existing_debt",
   "residence_type",
-  "residence_details",
   "column_break_lssp",
   "insurance_type",
   "insurance_coverage_details",
   "verification_section",
   "physical_verification",
   "physical_verification_notes",
-  "genuineness_assessment",
-  "milaap_recommendation",
   "column_break_dhaq",
   "vulnerability_assessment",
   "milaap_campaign_link",
@@ -156,60 +145,31 @@
   {
    "fieldname": "age",
    "fieldtype": "Int",
-   "label": "Age",
-   "reqd": 1
+   "label": "Age"
   },
   {
    "fieldname": "mobile_number",
    "fieldtype": "Data",
    "in_list_view": 1,
-   "label": "Mobile Number (as per Aadhar)",
+   "label": "Mobile Number",
    "options": "Phone",
    "reqd": 1
-  },
-  {
-   "fieldname": "qualification",
-   "fieldtype": "Link",
-   "label": "Qualification",
-   "options": "Qualification"
-  },
-  {
-   "fieldname": "primary_contact_person",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Primary Contact Person (Beneficiary)",
-   "options": "Name"
   },
   {
    "fieldname": "column_break_cspa",
    "fieldtype": "Column Break"
   },
   {
-   "fieldname": "date_of_birth",
-   "fieldtype": "Date",
-   "label": "Date of Birth (as per Aadhar)",
-   "reqd": 1
-  },
-  {
    "fieldname": "gender",
    "fieldtype": "Select",
    "label": "Gender",
-   "options": "\nMale\nFemale\nothers",
-   "reqd": 1
-  },
-  {
-   "fieldname": "email",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Email",
-   "options": "Email"
+   "options": "\nMale\nFemale\nothers"
   },
   {
    "fieldname": "employment_status",
    "fieldtype": "Select",
    "label": "Employment Status",
-   "options": "\nEmployed\nUnemployed\nRetired",
-   "reqd": 1
+   "options": "\nEmployed\nUnemployed\nRetired\nNot Applicable"
   },
   {
    "fieldname": "primary_contact_mobile",
@@ -219,30 +179,14 @@
    "options": "Phone"
   },
   {
-   "fieldname": "address_line_1",
-   "fieldtype": "Data",
-   "label": "Address Line 1",
-   "reqd": 1
-  },
-  {
    "fieldname": "district",
    "fieldtype": "Data",
-   "label": "District",
-   "read_only": 1,
-   "reqd": 1
-  },
-  {
-   "fieldname": "pincode",
-   "fieldtype": "Data",
-   "label": "Pincode",
-   "reqd": 1
+   "label": "District"
   },
   {
    "fieldname": "state",
    "fieldtype": "Data",
-   "label": "State",
-   "read_only": 1,
-   "reqd": 1
+   "label": "State"
   },
   {
    "fieldname": "request_details_section",
@@ -252,8 +196,7 @@
   {
    "fieldname": "hospital_institution_name",
    "fieldtype": "Data",
-   "label": "Hospital / Institution Name",
-   "reqd": 1
+   "label": "Hospital / Institution Name"
   },
   {
    "fieldname": "column_break_eybn",
@@ -262,14 +205,12 @@
   {
    "fieldname": "hospital_institution_location",
    "fieldtype": "Data",
-   "label": "Hospital / Institution Location",
-   "reqd": 1
+   "label": "Hospital / Institution Location"
   },
   {
    "fieldname": "ailment__course_details",
    "fieldtype": "Small Text",
-   "label": "Ailment / Course Details",
-   "reqd": 1
+   "label": "Ailment / Course Details"
   },
   {
    "depends_on": "eval:(doc.type_of_request==\"Medical\" || doc.type_of_request==\"Education\") && (frappe.user_roles.includes(\"Support IID Reviewer\") || frappe.user_roles.includes(\"Support IID Approver\") || frappe.user_roles.includes(\"System Manager\") || frappe.session.user === \"Administrator\")",
@@ -305,27 +246,13 @@
   {
    "fieldname": "annual_family_income",
    "fieldtype": "Currency",
-   "label": "Annual Family Income",
-   "reqd": 1
-  },
-  {
-   "fieldname": "existing_debt",
-   "fieldtype": "Data",
-   "label": "Existing Debt (Ex: Outstanding House loan of 3lakhs)",
-   "reqd": 1
+   "label": "Annual Family Income"
   },
   {
    "fieldname": "residence_type",
    "fieldtype": "Select",
    "label": "Residence Type",
-   "options": "\nOwn\nRent",
-   "reqd": 1
-  },
-  {
-   "fieldname": "residence_details",
-   "fieldtype": "Data",
-   "label": "Residence Details (Ex: 1BHK House rent of rs8000 pm)",
-   "reqd": 1
+   "options": "\nOwn\nRent"
   },
   {
    "fieldname": "column_break_lssp",
@@ -352,8 +279,7 @@
    "fieldname": "physical_verification",
    "fieldtype": "Select",
    "label": "Physical Verification",
-   "options": "\nYes\nNo",
-   "reqd": 1
+   "options": "\nYes\nNo"
   },
   {
    "depends_on": "eval:doc.physical_verification==\"Yes\";",
@@ -361,11 +287,6 @@
    "fieldtype": "Data",
    "label": "Physical Verification Notes (Describe the visit details)",
    "mandatory_depends_on": "eval:doc.physical_verification==\"Yes\";"
-  },
-  {
-   "fieldname": "genuineness_assessment",
-   "fieldtype": "Data",
-   "label": "Genuineness of the case"
   },
   {
    "fieldname": "column_break_dhaq",
@@ -380,12 +301,6 @@
    "fieldname": "milaap_campaign_link",
    "fieldtype": "Data",
    "label": "Milaap campaign link",
-   "permlevel": 1
-  },
-  {
-   "fieldname": "milaap_recommendation",
-   "fieldtype": "Data",
-   "label": "Milaap recommendation",
    "permlevel": 1
   },
   {
@@ -409,17 +324,6 @@
    "reqd": 1
   },
   {
-   "fieldname": "family_members_details_section",
-   "fieldtype": "Section Break",
-   "label": "Family Members Details"
-  },
-  {
-   "fieldname": "family_members",
-   "fieldtype": "Table",
-   "label": "Family Members",
-   "options": "Family Member"
-  },
-  {
    "default": "0",
    "fieldname": "show_activity_details",
    "fieldtype": "Check",
@@ -435,17 +339,9 @@
    "read_only": 1
   },
   {
-   "fieldname": "marital_status",
-   "fieldtype": "Select",
-   "label": "Marital Status",
-   "options": "\nSingle\nMarried\nDivorced\nWidowed",
-   "reqd": 1
-  },
-  {
    "fieldname": "note_about_the_individual",
    "fieldtype": "Small Text",
-   "label": "Note about the individual",
-   "reqd": 1
+   "label": "Note about the individual"
   },
   {
    "fieldname": "section_break_ejlu",
@@ -545,12 +441,23 @@
    "fieldtype": "Attach",
    "label": "Case Document",
    "permlevel": 2
+  },
+  {
+   "fieldname": "family_details",
+   "fieldtype": "Small Text",
+   "label": "Family Details",
+   "options": "\\"
+  },
+  {
+   "fieldname": "location",
+   "fieldtype": "Data",
+   "label": "location"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-10 11:13:32.260703",
+ "modified": "2026-09-24 19:12:58.161178",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Register",

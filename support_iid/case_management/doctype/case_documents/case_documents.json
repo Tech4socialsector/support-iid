@@ -10,7 +10,6 @@
   "documents_section",
   "document_name",
   "attachment",
-  "remarks",
   "is_mandatory"
  ],
  "fields": [
@@ -20,12 +19,6 @@
    "in_list_view": 1,
    "label": "Attachment",
    "mandatory_depends_on": "eval: doc.is_mandatory"
-  },
-  {
-   "fieldname": "remarks",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "Remarks"
   },
   {
    "fieldname": "documents_section",
@@ -52,7 +45,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-07-20 09:26:42.383474",
+ "modified": "2026-09-24 15:56:57.213137",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Case Documents",
