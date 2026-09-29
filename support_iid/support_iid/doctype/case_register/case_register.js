@@ -390,6 +390,7 @@ frappe.ui.form.on("Case Register", {
 		apply_approver_action_button(frm);
 		apply_reviewer_final_approval_button(frm);
 		apply_full_details_submit_button(frm);
+		apply_additional_support_button(frm);
 		apply_case_status_indicator(frm);
 		case_register_resync_stale_roles(frm);
 
@@ -602,6 +603,180 @@ function submit_full_details(frm) {
 			}
 		}
 	);
+}
+
+function apply_additional_support_button(frm) {
+	if (frm.is_new() || frm.doc.case_status !== "Approved") return;
+
+	var roles = frappe.user_roles || [];
+	var user = frappe.session.user;
+	var can_request =
+		user === "Administrator" ||
+		roles.includes("System Manager") ||
+		roles.includes("Support IID Reviewer") ||
+		(frm.doc.requestor_email || "").trim().toLowerCase() === user.toLowerCase();
+	if (!can_request) return;
+
+	frm.add_custom_button(__("Additional Support Request"), () => additional_support_dialog(frm));
+}
+
+function case_register_past_records_html(frm) {
+	var d = frm.doc;
+	var esc = frappe.utils.escape_html;
+	var row = function (label, value) {
+		return (
+			'<tr><td style="padding:5px 10px 5px 0;color:#5c6773;white-space:nowrap;vertical-align:top;">' +
+			esc(label) +
+			'</td><td style="padding:5px 0;color:#1a2229;">' +
+			(value ? esc(String(value)) : '<span style="color:#9aa4ad;">-</span>') +
+			"</td></tr>"
+		);
+	};
+	// The main form holds the latest request; the first one is the history
+	// row marked "First request" (FIRST_REQUEST_PURPOSE in case_register.py).
+	var history = (d.additional_support_requests || []).slice().sort(function (a, b) {
+		return (a.request_date || "").localeCompare(b.request_date || "") || (a.idx || 0) - (b.idx || 0);
+	});
+	var first_idx = history.findIndex(function (r) {
+		return r.purpose_of_additional_support === "First request";
+	});
+	if (first_idx === -1 && history.length) first_idx = 0;
+	var first = first_idx === -1 ? d : history[first_idx];
+	var html =
+		'<div style="font-weight:600;margin-bottom:6px;">' +
+		__("Past Provisional Record") +
+		"</div>" +
+		'<table style="width:100%;font-size:13px;margin-bottom:14px;">' +
+		row(__("Request Date (first request)"), first.request_date ? frappe.datetime.str_to_user(first.request_date) : "") +
+		row(__("Name"), d.beneficiary_name) +
+		row(__("Age"), d.age) +
+		row(__("Mobile Number"), d.mobile_number) +
+		row(__("Location"), d.location) +
+		row(__("Note about the individual"), d.note_about_the_individual) +
+		row(__("Fund Requested (first request)"), format_currency(first.funds_requested || 0)) +
+		"</table>";
+
+	var previous = history.filter(function (r, i) {
+		return i !== first_idx;
+	});
+	if (d.purpose_of_additional_support) {
+		previous = previous.concat([
+			{
+				request_date: d.request_date,
+				status: d.current_request_status,
+				funds_requested: d.funds_requested,
+				purpose_of_additional_support: d.purpose_of_additional_support,
+			},
+		]);
+	}
+	if (previous.length) {
+		html +=
+			'<div style="font-weight:600;margin-bottom:6px;">' +
+			__("Previous Additional Requests") +
+			"</div>" +
+			'<table style="width:100%;font-size:13px;margin-bottom:6px;">';
+		previous.forEach(function (r) {
+			html += row(
+				(r.request_date ? frappe.datetime.str_to_user(r.request_date) : "") + " — " + (r.status || ""),
+				format_currency(r.funds_requested || 0) + " · " + (r.purpose_of_additional_support || "")
+			);
+		});
+		html += "</table>";
+	}
+	return html;
+}
+
+function additional_support_dialog(frm) {
+	var dialog = new frappe.ui.Dialog({
+		title: __("Additional Support Request"),
+		size: "large",
+		fields: [
+			{ fieldname: "past_records", fieldtype: "HTML", options: case_register_past_records_html(frm) },
+			{ fieldtype: "Section Break", label: __("Additional Request") },
+			{
+				fieldname: "request_date",
+				fieldtype: "Date",
+				label: __("Request Date"),
+				default: frappe.datetime.get_today(),
+				read_only: 1,
+			},
+			{
+				fieldname: "purpose",
+				fieldtype: "Small Text",
+				label: __("Purpose of Additional Support"),
+				reqd: 1,
+			},
+			{
+				fieldname: "funds_requested",
+				fieldtype: "Currency",
+				label: __("Fund Requested (Estimate)"),
+				reqd: 1,
+			},
+			// Prefilled from the previous request; editable if anything changed.
+			{
+				fieldname: "hospital_institution_name",
+				fieldtype: "Data",
+				label: frm.fields_dict.hospital_institution_name.df.label,
+				default: frm.doc.hospital_institution_name,
+				reqd: 1,
+			},
+			{
+				fieldname: "hospital_institution_location",
+				fieldtype: "Data",
+				label: frm.fields_dict.hospital_institution_location.df.label,
+				default: frm.doc.hospital_institution_location,
+				reqd: 1,
+			},
+			{
+				fieldname: "ailment__course_details",
+				fieldtype: "Small Text",
+				label: frm.fields_dict.ailment__course_details.df.label,
+				default: frm.doc.ailment__course_details,
+				reqd: 1,
+			},
+			{
+				fieldname: "treatment",
+				fieldtype: "Data",
+				label: frm.fields_dict.treatment.df.label,
+				default: frm.doc.treatment,
+				hidden: frm.doc.type_of_request === "Education" ? 1 : 0,
+				reqd: frm.doc.type_of_request === "Medical" ? 1 : 0,
+			},
+			{
+				fieldname: "document",
+				fieldtype: "Attach",
+				label: __("Document (If any)"),
+				options: { make_attachments_public: 0, allow_toggle_private: false },
+			},
+		],
+		primary_action_label: __("Submit Request"),
+		primary_action: function (values) {
+			if (!(flt(values.funds_requested) > 0)) {
+				frappe.show_alert({ message: __("Fund Requested must be greater than zero."), indicator: "orange" });
+				return;
+			}
+			case_register_call_with_loader({
+				method: "support_iid.support_iid.doctype.case_register.case_register.request_additional_support",
+				args: {
+					case_name: frm.doc.name,
+					purpose: values.purpose,
+					funds_requested: values.funds_requested,
+					document: values.document || null,
+					hospital_institution_name: values.hospital_institution_name,
+					hospital_institution_location: values.hospital_institution_location,
+					ailment__course_details: values.ailment__course_details,
+					treatment: values.treatment || "",
+				},
+				freeze_message: __("Submitting..."),
+				callback: function () {
+					dialog.hide();
+					frm.reload_doc();
+					frappe.show_alert({ message: __("Additional support request submitted for approval."), indicator: "green" });
+				},
+			});
+		},
+	});
+	dialog.show();
 }
 
 // Mirrors applyInsuranceVisibility() in support_iid_case_registration.js.

@@ -14,6 +14,9 @@ frappe.pages['support-iid-dashboard'].on_page_load = function (wrapper) {
 	new SupportIIDDashboard(page);
 };
 
+// Card colour per case status (see .sd-tone-* in inject_styles); others are purple.
+const STATUS_TONES = { Approved: 'green', Draft: 'gray', Rejected: 'red', 'On Hold': 'gray' };
+
 // Financial Summary cards: full rupee figure, or compact crores (1 Cr = 1,00,00,000).
 function format_summary_amount(value, show_full) {
 	if (show_full) return format_currency(value);
@@ -165,45 +168,63 @@ class SupportIIDDashboard {
 	inject_styles() {
 		if ($('#siid-dash-style').length) return;
 		$(`<style id="siid-dash-style">
-			.sd-page { padding:20px 28px 48px; }
-			.sd-toolbar { display:flex; align-items:center; gap:10px; margin-bottom:18px; flex-wrap:wrap; }
-			.sd-toolbar .sd-spacer { flex:1; }
+			/* Layout: tinted header band, white filter strip, then a light
+			   grey body with the cards in a centred container. */
+			.sd-page { border-radius:10px; border:1px solid var(--border-color,#e3e8ec); }
+			.sd-page > .sd-header { border-radius:10px 10px 0 0; }
+			.sd-page > .sd-body { border-radius:0 0 10px 10px; }
+			.sd-spacer { flex:1; }
+			.sd-header {
+				display:flex; align-items:center; gap:14px; padding:14px 28px;
+				background:linear-gradient(90deg, rgba(36,144,239,.10), rgba(139,92,246,.06));
+				border-bottom:1px solid rgba(36,144,239,.22);
+			}
+			.sd-header-logo { width:40px; height:40px; object-fit:contain; border-radius:10px; background:#fff; padding:4px; box-shadow:0 1px 3px rgba(0,0,0,.08); }
+			.sd-header-title { font-size:18px; font-weight:700; color:#1c6fc0; line-height:1.2; }
+			.sd-header-sub { font-size:12.5px; color:var(--text-muted,#8d99a6); margin-top:2px; }
+			[data-theme="dark"] .sd-header-title { color:#60a5fa; }
+			.sd-live { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted,#8d99a6); }
+			.sd-live-dot { width:8px; height:8px; border-radius:50%; background:#22a55b; box-shadow:0 0 0 3px rgba(34,165,91,.18); }
 
-			.sd-section-heading { font-size:15px; font-weight:700; margin:0 0 14px; color:var(--text-color,#1a1a1a); }
-			.sd-section-head-row { display:flex; align-items:center; justify-content:space-between; gap:12px; margin:22px 0 14px; }
-			.sd-section-head-row .sd-section-heading { margin:0; }
-			.sd-amount-toggle { display:inline-flex; align-items:center; gap:6px; font-size:12.5px; color:var(--text-muted,#8d99a6); cursor:pointer; margin:0; user-select:none; }
-			.sd-amount-toggle input { margin:0; cursor:pointer; }
-
-			/* Filter fields sit directly on the page — no card surface. */
-			.sd-filter-bar { margin-bottom:22px; }
-			.sd-filter-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:16px 18px; margin-bottom:16px; }
-			.sd-filter-item label { display:block; font-size:12px; font-weight:600; color:var(--text-muted,#8d99a6); margin-bottom:6px; text-transform:uppercase; letter-spacing:.03em; }
+			.sd-filter-bar { background:var(--card-bg,#fff); border-bottom:1px solid var(--border-color,#e3e8ec); padding:16px 28px; }
+			.sd-filter-grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:14px 18px; align-items:end; }
+			.sd-filter-item label { display:block; font-size:11.5px; font-weight:700; color:var(--text-muted,#8d99a6); margin-bottom:6px; text-transform:uppercase; letter-spacing:.05em; }
 			.sd-filter-item .form-control { width:100%; }
 			.sd-filter-actions { display:flex; align-items:center; gap:8px; }
 
-			/* smaller metric cards, with a small icon badge — every group
-			   (Status, Financial, Insights) shares the same fixed card
-			   width and height, so cards never look mismatched in size
-			   across groups or within a group regardless of how many
-			   cards a group has or how much sub-text a given card holds.
-			   auto-fill (not auto-fit) with a fixed px width, not 1fr,
-			   keeps cards from stretching to fill a group with fewer
-			   cards than others. Height is tall enough for the worst case
-			   (a 2-line label like "Sent Back for Revision" + a value +
-			   a sub line) — content is never clipped, just given a
-			   consistent floor so shorter cards don't look tiny next to it. */
-			.sd-metrics-grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:16px; align-items:stretch; }
-			/* Plain neutral cards — no per-card accent colors, just a clean
-			   white card with a subtle lift on hover. Wide and short,
-			   matching a compact dashboard-summary-card look. */
+			.sd-body { background:#f5f7fa; min-height:calc(100vh - 260px); padding:22px 28px 48px; }
+			[data-theme="dark"] .sd-body { background:var(--bg-color, #1c2126); }
+			.sd-container { max-width:1280px; margin:0 auto; }
+
+			/* Small uppercase section label with a rule running to the right. */
+			.sd-section-label {
+				display:flex; align-items:center; gap:12px; margin:6px 0 12px;
+				font-size:11.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--text-muted,#8d99a6);
+			}
+			.sd-section-label::after { content:""; flex:1; height:1px; background:var(--border-color,#dfe3e8); order:1; }
+			.sd-section-label .sd-amount-toggle { order:2; }
+			.sd-metrics-grid + .sd-section-label { margin-top:26px; }
+			.sd-amount-toggle { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; letter-spacing:0; text-transform:none; color:var(--text-muted,#8d99a6); cursor:pointer; margin:0; user-select:none; }
+			.sd-amount-toggle input { margin:0; cursor:pointer; }
+
+			/* Cards share each row equally across the container, wrapping onto
+			   a new row once narrower than 200px. */
+			.sd-metrics-grid { display:flex; flex-wrap:wrap; gap:14px; align-items:stretch; }
+			.sd-metrics-grid > .sd-metric-card { flex:1 1 200px; }
+			/* White card, coloured top strip, value above its label. */
 			.sd-metric-card {
-				background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:12px;
-				padding:14px 16px 12px; cursor:pointer; transition:box-shadow .16s, transform .16s;
-				width:100%; min-height:76px; display:flex; flex-direction:column;
-				box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+				background:var(--card-bg,#fff); border:1px solid var(--border-color,#e3e8ec); border-top:3px solid var(--sd-tone,#8d99a6);
+				border-radius:10px; padding:16px 16px 14px; cursor:pointer; transition:box-shadow .16s, transform .16s;
+				width:100%; min-height:88px; display:flex; flex-direction:column; justify-content:flex-end;
+				box-shadow:0 1px 3px rgba(0,0,0,.05);
 			}
 			.sd-metric-card:hover { box-shadow:0 8px 20px rgba(15,23,32,.09); transform:translateY(-2px); }
+			.sd-tone-amber  { --sd-tone:#f59e0b; }
+			.sd-tone-blue   { --sd-tone:#2490ef; }
+			.sd-tone-green  { --sd-tone:#22a55b; }
+			.sd-tone-purple { --sd-tone:#8b5cf6; }
+			.sd-tone-red    { --sd-tone:#e5484d; }
+			.sd-tone-gray   { --sd-tone:#8d99a6; }
 			.sd-metric-card.sd-disabled { cursor:default; opacity:.65; }
 			.sd-metric-card.sd-disabled:hover { box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04); transform:none; }
 
@@ -262,13 +283,9 @@ class SupportIIDDashboard {
 				display:inline-flex; align-items:center; box-shadow:none !important;
 				white-space:nowrap; max-width:none;
 			}
-			.sd-metric-icon {
-				width:22px; height:22px; border-radius:7px; background:var(--control-bg,#f0f1f3); color:#5a6068;
-				display:flex; align-items:center; justify-content:center; font-size:11px; margin-bottom:4px;
-			}
-			.sd-metric-label { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--text-muted,#8d99a6); margin-bottom:2px; }
-			.sd-metric-value { font-size:20px; font-weight:700; color:var(--text-color,#1a1a1a); line-height:1.2; }
-			.sd-metric-sub { font-size:11.5px; color:var(--text-muted,#8d99a6); margin-top:2px; }
+			.sd-metric-value { font-size:19px; font-weight:700; color:var(--text-color,#1a1a1a); line-height:1.2; }
+			.sd-metric-label { font-size:11.5px; font-weight:500; color:var(--text-muted,#8d99a6); margin-top:4px; line-height:1.35; }
+			.sd-metric-sub { font-size:11px; color:var(--text-muted,#8d99a6); margin-top:2px; }
 
 			.sd-chart-panel { background:var(--card-bg,#fff); border:1px solid var(--border-color,#d1d8dd); border-radius:12px; padding:20px 22px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04); }
 			.sd-chart-title { font-size:13px; font-weight:700; margin-bottom:16px; color:var(--text-color,#1a1a1a); }
@@ -330,9 +347,25 @@ class SupportIIDDashboard {
 			.sd-detail-hero .indicator-pill { box-shadow:none !important; }
 			.sd-hero-action { margin-top:10px; }
 
-			.sd-detail-tabs { display:flex; gap:4px; border-bottom:1px solid var(--border-color,#d1d8dd); padding:0 24px; overflow-x:auto; }
-			.sd-detail-tab { padding:11px 14px; cursor:pointer; font-size:13px; font-weight:500; color:var(--text-muted,#8d99a6); border-bottom:2px solid transparent; white-space:nowrap; }
-			.sd-detail-tab.on { color:var(--text-color,#1a1a1a); border-bottom-color:var(--primary,#2490ef); }
+			/* Tabs: tinted strip, the active tab as a filled blue pill. */
+			.sd-detail-tabs {
+				display:flex; gap:6px; padding:10px 24px; overflow-x:auto;
+				background:linear-gradient(90deg, rgba(36,144,239,.07), rgba(139,92,246,.05));
+				border-bottom:1px solid var(--border-color,#e3e8ec);
+			}
+			.sd-detail-tab {
+				padding:7px 16px; cursor:pointer; font-size:13px; font-weight:600; white-space:nowrap;
+				color:#4b5560; border-radius:8px; border:1px solid transparent;
+				transition:background .12s, color .12s, border-color .12s, box-shadow .12s;
+			}
+			.sd-detail-tab:hover { background:var(--card-bg,#fff); color:#1c6fc0; border-color:rgba(36,144,239,.25); }
+			.sd-detail-tab.on {
+				background:#2490ef; color:#fff; border-color:#2490ef;
+				box-shadow:0 2px 6px rgba(36,144,239,.30);
+			}
+			[data-theme="dark"] .sd-detail-tab { color:#c0c7ce; }
+			[data-theme="dark"] .sd-detail-tab:hover { color:#60a5fa; }
+			[data-theme="dark"] .sd-detail-tab.on { color:#fff; }
 			.sd-detail-panel { display:none; padding:22px 24px; }
 			.sd-detail-panel.on { display:block; }
 
@@ -415,8 +448,10 @@ class SupportIIDDashboard {
 			   .sd-table-scroll / #cl-table's own wrapper), drop sticky filter
 			   bar so it doesn't eat vertical space on small screens. */
 			@media (max-width: 640px) {
-				.sd-page { padding:14px 14px 36px; }
-				.sd-metrics-grid { grid-template-columns:1fr; }
+				.sd-header, .sd-filter-bar { padding-left:16px; padding-right:16px; }
+				.sd-header { flex-wrap:wrap; }
+				.sd-body { padding:16px 16px 36px; }
+				.sd-metrics-grid > .sd-metric-card { flex-basis:100%; }
 				.sd-filter-grid { grid-template-columns:1fr; }
 				.sd-field-grid { grid-template-columns:1fr; }
 				.sd-detail-grid .sd-section { border-right:none !important; }
@@ -428,8 +463,15 @@ class SupportIIDDashboard {
 	render_shell() {
 		this.wrapper.html(`
 			<div class="sd-page">
-				<div class="sd-toolbar">
+				<div class="sd-header">
+					<img class="sd-header-logo" src="/assets/support_iid/images/apf_logo.png" alt="">
+					<div class="sd-header-text">
+						<div class="sd-header-title">Support IID</div>
+						<div class="sd-header-sub">Case Approval &amp; Support Tracking Dashboard</div>
+					</div>
 					<div class="sd-spacer"></div>
+					<button class="btn btn-primary btn-sm" id="sd-refresh" data-tooltip="Reload dashboard data">${icon('refresh', 13)} Reload</button>
+					<span class="sd-live"><span class="sd-live-dot"></span>Live</span>
 				</div>
 
 				<div class="sd-filter-bar">
@@ -466,23 +508,26 @@ class SupportIIDDashboard {
 							<label>Registered Up To</label>
 							<div id="sd-f-upto-field"></div>
 						</div>
-					</div>
-					<div class="sd-filter-actions">
-						<button class="btn btn-primary btn-sm" id="sd-refresh" data-tooltip="Reload dashboard data">${icon('refresh', 13)} Reload</button>
-						<button class="btn btn-default btn-sm" id="sd-f-clear" data-tooltip="Clear all active filters">${icon('clear', 13)} Clear filters</button>
+						<div class="sd-filter-actions">
+							<button class="btn btn-default btn-sm" id="sd-f-clear" data-tooltip="Clear all active filters">${icon('clear', 13)} Clear filters</button>
+						</div>
 					</div>
 				</div>
 
-				<div class="sd-section-heading">Case Overview</div>
-				<div class="sd-metrics-grid" id="sd-metrics-status"></div>
+				<div class="sd-body">
+					<div class="sd-container">
+						<div class="sd-section-label"><span>Case Overview</span></div>
+						<div class="sd-metrics-grid" id="sd-metrics-status"></div>
 
-				<div class="sd-section-head-row">
-					<div class="sd-section-heading">Financial Summary</div>
-					<label class="sd-amount-toggle" data-tooltip="Uncheck to show amounts in crores">
-						<input type="checkbox" id="sd-amount-full"${this.show_full_amounts ? ' checked' : ''}> Show full amount
-					</label>
+						<div class="sd-section-label">
+							<span>Financial Summary</span>
+							<label class="sd-amount-toggle" data-tooltip="Uncheck to show amounts in crores">
+								<input type="checkbox" id="sd-amount-full"${this.show_full_amounts ? ' checked' : ''}> Show full amount
+							</label>
+						</div>
+						<div class="sd-metrics-grid" id="sd-metrics-financial"></div>
+					</div>
 				</div>
-				<div class="sd-metrics-grid" id="sd-metrics-financial"></div>
 
 			</div>
 		`);
@@ -632,17 +677,17 @@ class SupportIIDDashboard {
 
 		var financial_cards = [
 			{
-				icon: icon('clock', 18), label: 'Pending Provisional Approval Amount', value: format_summary_amount(total_provisional_value, this.show_full_amounts),
+				tone: 'amber', icon: icon('clock', 18), label: 'Pending Provisional Approval Amount', value: format_summary_amount(total_provisional_value, this.show_full_amounts),
 				sub: provisional_rows.length + ' pending case(s)',
 				click: () => self.open_drilldown('Pending provisional approval cases', is_pending_provisional, 'status_no_approval')
 			},
 			{
-				icon: icon('clock', 18), label: 'Pending Final Approval Amount', value: format_summary_amount(total_final_value, this.show_full_amounts),
+				tone: 'blue', icon: icon('clock', 18), label: 'Pending Final Approval Amount', value: format_summary_amount(total_final_value, this.show_full_amounts),
 				sub: final_rows.length + ' pending case(s)',
 				click: () => self.open_drilldown('Pending final approval cases', is_pending_final, 'status_no_approval')
 			},
 			{
-				icon: '₹', label: 'Total Approved Amount', value: format_summary_amount(total_approved_value, this.show_full_amounts),
+				tone: 'green', icon: '₹', label: 'Total Approved Amount', value: format_summary_amount(total_approved_value, this.show_full_amounts),
 				sub: approved_rows.length + ' approved/closed case(s)',
 				click: () => self.open_drilldown('Approved cases', (c) => c.case_status === 'Approved' || c.case_status === 'Closed', 'approved')
 			}
@@ -657,12 +702,12 @@ class SupportIIDDashboard {
 
 		var status_cards = [
 			{
-				icon: icon('clock', 18), label: 'Cases In Progress · Provisional Approval', value: provisional_rows.length,
+				tone: 'amber', icon: icon('clock', 18), label: 'Cases In Progress · Provisional Approval', value: provisional_rows.length,
 				sub: 'awaiting provisional approval',
 				click: () => self.open_drilldown('Cases in progress · provisional approval', is_pending_provisional, 'status_no_approval')
 			},
 			{
-				icon: icon('clock', 18), label: 'Cases In Progress · Final Approval', value: final_rows.length,
+				tone: 'blue', icon: icon('clock', 18), label: 'Cases In Progress · Final Approval', value: final_rows.length,
 				sub: 'awaiting reviewer or final approval',
 				click: () => self.open_drilldown('Cases in progress · final approval', is_pending_final, 'status_no_approval')
 			}
@@ -674,12 +719,12 @@ class SupportIIDDashboard {
 			var preset = s === 'Approved' ? 'approved' : 'status_no_approval';
 			var label = s === 'Approved' ? 'Total Approved Cases' : status_display_label(s);
 			return {
-				icon: icon('tag', 18), label: label, value: status_rows.length,
+				tone: STATUS_TONES[s] || 'purple', icon: icon('tag', 18), label: label, value: status_rows.length,
 				sub: s === 'Approved' ? status_rows.length + ' approved/closed case(s)' : status_rows.length + ' case(s)',
 				click: () => self.open_drilldown(s === 'Approved' ? 'Approved cases' : label + ' cases', matches_status, preset)
 			};
 		})).concat(other_rows.length ? [{
-			icon: icon('tag', 18), label: 'Others', value: other_rows.length,
+			tone: 'gray', icon: icon('tag', 18), label: 'Others', value: other_rows.length,
 			sub: other_rows.length + ' case(s)',
 			click: () => self.open_drilldown('Other cases', (c) => status_list.indexOf(c.case_status) === -1, 'status_no_approval')
 		}] : []);
@@ -690,10 +735,9 @@ class SupportIIDDashboard {
 
 	render_metric_group(selector, cards) {
 		var html = cards.map((card, i) => `
-			<div class="sd-metric-card ${card.disabled ? 'sd-disabled' : ''}" data-idx="${i}"${card.click && !card.disabled ? ' data-tooltip="Click to see matching cases"' : ''}>
-				<div class="sd-metric-icon">${card.icon || ''}</div>
-				<div class="sd-metric-label">${frappe.utils.escape_html(card.label)}</div>
+			<div class="sd-metric-card sd-tone-${card.tone || 'gray'} ${card.disabled ? 'sd-disabled' : ''}" data-idx="${i}"${card.click && !card.disabled ? ' data-tooltip="Click to see matching cases"' : ''}>
 				<div class="sd-metric-value">${typeof card.value === 'number' ? card.value : frappe.utils.escape_html(String(card.value))}</div>
+				<div class="sd-metric-label">${frappe.utils.escape_html(card.label)}</div>
 				<div class="sd-metric-sub">${card.subHtml ? card.subHtml : frappe.utils.escape_html(card.sub || '')}</div>
 			</div>
 		`).join('');
@@ -1215,17 +1259,9 @@ class SupportIIDDashboard {
 			return `<span class="indicator-pill orange" style="white-space:nowrap;box-shadow:none">Awaiting: ${frappe.utils.escape_html(current.stage.approver_name || current.stage.approver_email || 'approver')}</span>`;
 		}
 
-		return `
-			<div class="btn-group sd-action-dropdown">
-				<button type="button" class="btn btn-primary btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
-					${icon('sliders', 13)} Take Action
-				</button>
-				<div class="dropdown-menu dropdown-menu-right">
-					<a class="dropdown-item sd-action-open" data-action="Approve" href="#">Approve</a>
-					<a class="dropdown-item sd-action-open" data-action="Send Back" href="#">Send Back</a>
-					<a class="dropdown-item sd-action-open" data-action="Decline" href="#">Decline</a>
-				</div>
-			</div>`;
+		// No Take Action button on the dashboard — approvers act from the
+		// case form or the approval email.
+		return '';
 	}
 
 	build_case_detail_html(doc) {

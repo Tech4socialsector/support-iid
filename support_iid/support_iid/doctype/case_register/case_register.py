@@ -21,6 +21,7 @@ ACTION_LABEL = {
 	"Send Back": "Sent Back for Revision",
 	"Reviewer Approve": "Verified",
 	"Reviewer Send Back": "Sent Back for Revision (Final Verification)",
+	"Additional Support Requested": "Additional support requested",
 }
 
 CASE_STATUS_DRAFT = "Draft"
@@ -101,6 +102,165 @@ def _missing_full_details(doc):
 	if doc.get("physical_verification") == "Yes":
 		required.append("physical_verification_notes")
 	return [doc.meta.get_label(f) for f in required if doc.get(f) in (None, "")]
+
+
+ADDITIONAL_STATUS_PENDING = "Pending"
+ADDITIONAL_STATUS_APPROVED = "Approved"
+ADDITIONAL_STATUS_DECLINED = "Declined"
+ADDITIONAL_STATUS_WITHDRAWN = "Withdrawn"
+
+
+FIRST_REQUEST_PURPOSE = "First request"
+
+
+def _active_additional_request(doc):
+	"""
+	The additional support request currently going through approval, if any.
+	The latest request always lives on the main form fields (request_date,
+	funds_requested, purpose_of_additional_support, additional_support_document);
+	earlier requests are kept in additional_support_requests as history.
+	"""
+	if doc.get("current_request_status") != ADDITIONAL_STATUS_PENDING:
+		return None
+	return frappe._dict(
+		request_date=doc.request_date,
+		funds_requested=doc.funds_requested,
+		total_funds_requested=doc.total_funds_requested,
+		purpose_of_additional_support=doc.purpose_of_additional_support,
+		document=doc.additional_support_document,
+	)
+
+
+def _approved_funds_total(doc):
+	"""Every approved request so far: history rows plus the one on the form."""
+	total = float(doc.funds_requested or 0)
+	for row in doc.get("additional_support_requests") or []:
+		if row.status == ADDITIONAL_STATUS_APPROVED:
+			total += float(row.funds_requested or 0)
+	return total
+
+
+# Copied as-is from the case into each history row (Additional Support
+# Request has a field of the same name for each), filled or not.
+HISTORY_SNAPSHOT_FIELDS = (
+	"request_date",
+	"type_of_request",
+	"funds_requested",
+	"beneficiary_name",
+	"age",
+	"gender",
+	"mobile_number",
+	"location",
+	"family_details",
+	"employment_status",
+	"state",
+	"district",
+	"primary_contact_mobile",
+	"note_about_the_individual",
+	"hospital_institution_name",
+	"hospital_institution_location",
+	"ailment__course_details",
+	"treatment",
+	"reviewer_case_diagnosis",
+	"amount_already_spent",
+	"annual_family_income",
+	"residence_type",
+	"insurance_type",
+	"insurance_coverage_details",
+	"physical_verification",
+	"physical_verification_notes",
+	"vulnerability_assessment",
+	"milaap_campaign_link",
+	"approved_date",
+	"approved_amount",
+	"date_of_transfer",
+	"utr_details",
+	"refund_amount_if_any",
+	"status_of_milaap_transfer",
+)
+
+# Replaced by each new additional request, and restored from history when
+# that request is declined or withdrawn.
+PER_REQUEST_FIELDS = (
+	"request_date",
+	"funds_requested",
+	"hospital_institution_name",
+	"hospital_institution_location",
+	"ailment__course_details",
+	"treatment",
+	"approved_date",
+)
+
+
+def _current_request_as_history_row(doc, status):
+	row = {f: doc.get(f) for f in HISTORY_SNAPSHOT_FIELDS}
+	row.update(
+		{
+			"purpose_of_additional_support": doc.purpose_of_additional_support or FIRST_REQUEST_PURPOSE,
+			"total_funds_requested": doc.total_funds_requested or doc.funds_requested,
+			"status": status,
+			"requested_by": doc.requestor_name or doc.requestor_email or "",
+			"document": doc.additional_support_document,
+		}
+	)
+	return row
+
+
+def _reviewer_approved_this_round(doc):
+	"""
+	Whether the Reviewer has already verified the current approval round.
+	An additional support request starts a new round, so only Reviewer
+	actions logged after its "Additional Support Requested" entry count.
+	"""
+	logs = doc.get("case_approval_log") or []
+	start = 0
+	for idx, log in enumerate(logs):
+		if (log.action or "") == "Additional Support Requested":
+			start = idx + 1
+	return any((log.action or "") == "Reviewer Approve" for log in logs[start:])
+
+
+def _close_additional_request(doc, outcome):
+	"""
+	Ends the active additional request without approving it (Declined or
+	Withdrawn): it moves into the history table with that status, the main
+	form goes back to the previous approved request, its not-yet-actioned
+	stage rows are dropped and the case returns to Approved.
+	"""
+	closed = _active_additional_request(doc)
+	if not closed:
+		return None
+
+	closed_row = _current_request_as_history_row(doc, outcome)
+	history = list(doc.get("additional_support_requests") or [])
+	prev_idx = next(
+		(i for i in range(len(history) - 1, -1, -1) if history[i].status == ADDITIONAL_STATUS_APPROVED),
+		None,
+	)
+	if prev_idx is not None:
+		prev = history.pop(prev_idx)
+		is_first = prev.purpose_of_additional_support == FIRST_REQUEST_PURPOSE
+		for fieldname in PER_REQUEST_FIELDS:
+			doc.set(fieldname, prev.get(fieldname))
+		doc.purpose_of_additional_support = "" if is_first else prev.purpose_of_additional_support
+		doc.additional_support_document = prev.document
+		doc.total_funds_requested = prev.total_funds_requested
+		doc.current_request_status = "" if is_first else ADDITIONAL_STATUS_APPROVED
+	doc.set("additional_support_requests", history)
+	doc.append("additional_support_requests", closed_row)
+
+	doc.set(
+		"case_approval_stage",
+		[
+			s
+			for s in (doc.get("case_approval_stage") or [])
+			if (s.case_approval_status or "").strip() not in ("", "Awaiting For Approval", "Send Back")
+		],
+	)
+	doc.case_status = CASE_STATUS_APPROVED
+	doc.current_approval_level = ""
+	return closed
+
 
 CASE_STATUS_DISPLAY_LABELS = {
 	CASE_STATUS_SENT_BACK: "Pending with Requester",
@@ -803,7 +963,7 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 			tbl.append(
 				[
 					Paragraph(f"<b>{label}</b>", st["td"]),
-					Paragraph(str(value) if value else "<i>Not provided</i>", st["td"]),
+					Paragraph(escape(str(value)) if value else "<i>Not provided</i>", st["td"]),
 				]
 			)
 		style = TableStyle(
@@ -867,7 +1027,7 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 		return [
 			Paragraph(label, st["th"]),
 			Spacer(1, 2),
-			Paragraph(str(value) if value else "<i>Not provided</i>", st["normal"]),
+			Paragraph(escape(str(value)) if value else "<i>Not provided</i>", st["normal"]),
 			Spacer(1, 8),
 		]
 
@@ -887,6 +1047,10 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 	def fgt(f):
 		return str(doc_data.get(f) or "") if doc_data.get(f) is not None else ""
 
+	def escape(value):
+		# reportlab Paragraph parses markup — keep typed text literal.
+		return (value or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
 	is_medical = "medical" in fgt("type_of_request").lower()
 
 	story = []
@@ -899,27 +1063,31 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 		Paragraph(fgt("request_date") or "\u2014", st["date"]),
 	]
 
+	# Provisional PDFs (first submission) carry only the registration fields;
+	# the full-details sections appear once those are in (_generate_and_save_pdf
+	# sets show_full_details, and rebuilds the PDF on submit_full_details).
+	show_full_details = bool(doc_data.get("show_full_details"))
+
 	# Addressee block
 	for line in filter(
 		None,
 		[
 			fgt("beneficiary_name"),
-			fgt("address_line_1"),
-			fgt("district"),
-			fgt("state"),
-			str(doc_data.get("pincode") or ""),
+			fgt("location"),
+			", ".join(filter(None, [fgt("district"), fgt("state")])),
 		],
 	):
-		story.append(Paragraph(line, st["addr"]))
+		story.append(Paragraph(escape(line), st["addr"]))
 
+	approval_kind = "final approval" if show_full_details else "provisional approval"
 	story += [
 		Spacer(1, 6),
 		Paragraph("Beneficiary Details", st["sal"]),
 		Spacer(1, 4),
 		Paragraph(
 			"This document is the official case summary for the support request registered "
-			f"on behalf of {fgt('beneficiary_name') or 'the beneficiary'} with the Support IID Case Management "
-			"System, Azim Premji Foundation. All details below are submitted for review and provisional approval.",
+			f"on behalf of {escape(fgt('beneficiary_name')) or 'the beneficiary'} with the Support IID Case Management "
+			f"System, Azim Premji Foundation. All details below are submitted for review and {approval_kind}.",
 			st["normal"],
 		),
 		Paragraph("The terms of the support request are as under:", st["normal"]),
@@ -940,8 +1108,6 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 				("Type of Request", fgt("type_of_request")),
 				("Request Date", fgt("request_date")),
 				("Source of Request", fgt("source_of_request")),
-				("Department", fgt("department")),
-				("Work Location", fgt("work_location")),
 			]
 		)
 	)
@@ -962,82 +1128,81 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 	)
 	story.append(Spacer(1, 10))
 
-	# C — Beneficiary
+	# C — Beneficiary (asked at registration)
 	story += sec("C", "BENEFICIARY INFORMATION")
 	story.append(
 		dtable(
 			[
 				("Beneficiary Name", fgt("beneficiary_name")),
-				("Date of Birth", fgt("date_of_birth")),
 				("Age", str(doc_data.get("age") or "")),
 				("Gender", fgt("gender")),
 				("Mobile Number", fgt("mobile_number")),
-				("Email", fgt("email")),
-				("Qualification", fgt("qualification")),
-				("Employment Status", fgt("employment_status")),
-				("Marital Status", fgt("marital_status")),
-				("Primary Contact Person", fgt("primary_contact_person")),
-				("Primary Contact Mobile", fgt("primary_contact_mobile")),
-				("Address", fgt("address_line_1")),
-				("District", fgt("district")),
-				("State", fgt("state")),
-				("Pincode", str(doc_data.get("pincode") or "")),
+				("Location", fgt("location")),
+				("Funds Requested", fmt_rs(doc_data.get("funds_requested"))),
 			]
 		)
 	)
 	story.append(Spacer(1, 8))
 	story += para_field("Note about Individual", fgt("note_about_the_individual"))
 
-	# D — Family Members
-	story += sec("D", "FAMILY MEMBERS")
-	story.append(ftable(doc_data.get("family_members") or []))
-	story.append(Spacer(1, 10))
-
-	# E — Request Details
-	story += sec("E", "REQUEST DETAILS")
-	req_rows = [
-		("Hospital / Institution Name", fgt("hospital_institution_name")),
-		("Hospital / Institution Location", fgt("hospital_institution_location")),
-		("Funds Requested", fmt_rs(doc_data.get("funds_requested"))),
-		("Amount Already Spent", fmt_rs(doc_data.get("amount_already_spent"))),
-	]
-	if is_medical:
-		req_rows.insert(2, ("Treatment", fgt("treatment")))
-	story.append(dtable(req_rows))
-	story.append(Spacer(1, 8))
-	story += para_field("Ailment / Course Details", fgt("ailment__course_details"))
-
-	# F — Financial & Insurance
-	story += sec("F", "FINANCIAL INFORMATION & INSURANCE")
-	story.append(
-		dtable(
-			[
-				("Annual Family Income", fmt_rs(doc_data.get("annual_family_income"))),
-				("Residence Type", fgt("residence_type")),
-				("Residence Details", fgt("residence_details")),
-				("Existing Debt", fgt("existing_debt")),
-				("Insurance Type", fgt("insurance_type")),
-				("Insurance Coverage", fgt("insurance_coverage_details")),
-			]
+	if show_full_details:
+		# D — Family & Contact
+		story += sec("D", "FAMILY & CONTACT DETAILS")
+		story.append(
+			dtable(
+				[
+					("Employment Status", fgt("employment_status")),
+					("Primary Contact Mobile", fgt("primary_contact_mobile")),
+					("District", fgt("district")),
+					("State", fgt("state")),
+				]
+			)
 		)
-	)
-	story.append(Spacer(1, 10))
+		story.append(Spacer(1, 8))
+		story += para_field("Family Details", fgt("family_details"))
 
-	# G — Verification & Assessment
-	story += sec("G", "VERIFICATION & ASSESSMENT")
-	story.append(
-		dtable(
-			[
-				("Physical Verification", fgt("physical_verification")),
-				("Milaap Campaign Link", fgt("milaap_campaign_link")),
-				("Milaap Recommendation", fgt("milaap_recommendation")),
-			]
+		# E — Request Details
+		story += sec("E", "REQUEST DETAILS")
+		req_rows = [
+			("Hospital / Institution Name", fgt("hospital_institution_name")),
+			("Hospital / Institution Location", fgt("hospital_institution_location")),
+			("Funds Requested", fmt_rs(doc_data.get("funds_requested"))),
+			("Amount Already Spent", fmt_rs(doc_data.get("amount_already_spent"))),
+		]
+		if is_medical:
+			req_rows.insert(2, ("Treatment", fgt("treatment")))
+		story.append(dtable(req_rows))
+		story.append(Spacer(1, 8))
+		story += para_field("Ailment / Course Details", fgt("ailment__course_details"))
+
+		# F — Financial & Insurance
+		story += sec("F", "FINANCIAL INFORMATION & INSURANCE")
+		story.append(
+			dtable(
+				[
+					("Annual Family Income", fmt_rs(doc_data.get("annual_family_income"))),
+					("Residence Type", fgt("residence_type")),
+					("Insurance Type", fgt("insurance_type")),
+					("Insurance Coverage", fgt("insurance_coverage_details")),
+				]
+			)
 		)
-	)
-	story.append(Spacer(1, 8))
-	story += para_field("Verification Notes", fgt("physical_verification_notes"))
-	story += para_field("Genuineness Assessment", fgt("genuineness_assessment"))
-	story += para_field("Vulnerability Assessment", fgt("vulnerability_assessment"))
+		story.append(Spacer(1, 10))
+
+		# G — Verification & Assessment
+		story += sec("G", "VERIFICATION & ASSESSMENT")
+		story.append(
+			dtable(
+				[
+					("Physical Verification", fgt("physical_verification")),
+					("Milaap Campaign Link", fgt("milaap_campaign_link")),
+				]
+			)
+		)
+		story.append(Spacer(1, 8))
+		if fgt("physical_verification") == "Yes":
+			story += para_field("Verification Notes", fgt("physical_verification_notes"))
+		story += para_field("Vulnerability Assessment", fgt("vulnerability_assessment"))
 	story.append(Spacer(1, 12))
 
 	# Closing
@@ -1512,7 +1677,7 @@ class CaseRegister(Document):
 		file_url = None
 		try:
 			doc_dict = self.as_dict()
-			doc_dict["family_members"] = [r.as_dict() for r in (self.get("family_members") or [])]
+			doc_dict["show_full_details"] = is_provisionally_approved(self)
 			doc_dict["supporting_documents"] = [r.as_dict() for r in (self.get("supporting_documents") or [])]
 
 			pdf_bytes = _build_case_pdf_bytes(doc_dict)
@@ -1629,7 +1794,12 @@ class CaseRegister(Document):
 		)
 
 		is_final_round = previous_action == "Reviewer Approve"
-		approval_kind = "Final Approval" if is_final_round else "Provisional Approval"
+		if is_final_round:
+			approval_kind = "Final Approval"
+		elif _active_additional_request(self):
+			approval_kind = "Additional Support Approval"
+		else:
+			approval_kind = "Provisional Approval"
 		subject = f"Approval Required - [{self.name}] - {req_name} ({approval_kind} ({level_label}))"
 
 		token = make_approval_token(self.name, stage_idx, approver_email)
@@ -1660,6 +1830,11 @@ class CaseRegister(Document):
 				if not url:
 					continue
 				fid = self._get_file_id_from_url(url, document_name=row.get("document_name"))
+				if fid:
+					attachments.append({"fid": fid})
+			additional = _active_additional_request(self)
+			if additional and additional.document:
+				fid = self._get_file_id_from_url(additional.document)
 				if fid:
 					attachments.append({"fid": fid})
 
@@ -1922,87 +2097,36 @@ class CaseRegister(Document):
 		previous_comments=None,
 		previous_approver_name=None,
 	):
+		"""
+		Approver email body. What it shows depends on the stage:
+		  - provisional round: only the fields asked at registration;
+		  - final round (full details submitted): those plus the full details;
+		  - additional support request: provisional fields, hospital/ailment,
+		    and the additional amount, total and purpose.
+		"""
 
 		def fget(f):
-			return getattr(self, f, None) or ""
+			value = self.get(f)
+			return "" if value is None else value
+
+		def text(f):
+			# Free text typed by the requester — never let it render as email markup.
+			return _sanitize_untrusted_text(str(fget(f)).strip()) or "-"
+
+		def inr(value):
+			return f"INR {int(float(value or 0)):,}" if value else "-"
 
 		is_medical = (fget("type_of_request") or "").lower() == "medical"
+		additional = _active_additional_request(self)
+		show_full_details = not additional and is_provisionally_approved(self)
+
 		ben_name = fget("beneficiary_name") or "the beneficiary"
 		req_name = fget("requestor_name") or fget("requestor_email") or "the requestor"
-		source = fget("source_of_request") or "the team"
-		ailment = fget("ailment__course_details") or "the current condition"
-		hospital = fget("hospital_institution_name") or "-"
-		hosp_loc = fget("hospital_institution_location") or ""
-		treatment = fget("treatment") or ""
-		age = fget("age") or "-"
-		address = (
-			", ".join(
-				filter(
-					None,
-					[
-						fget("address_line_1"),
-						fget("district"),
-						fget("state"),
-					],
-				)
-			)
-			or "-"
-		)
-		residence = (
-			", ".join(
-				filter(
-					None,
-					[
-						fget("residence_type"),
-						fget("residence_details"),
-					],
-				)
-			)
-			or "-"
-		)
-		funds_req = self.funds_requested or 0
-		ann_income = float(fget("annual_family_income") or 0)
-		monthly_inc = int(ann_income / 12) if ann_income else 0
-		condition = fget("physical_verification_notes") or fget("genuineness_assessment") or "-"
-
-		fam_parts = []
-		for fm in self.get("family_members") or []:
-			nm = (fm.get("member_name") or "").strip()
-			rel = (fm.get("relationship") or "").strip()
-			if rel and nm:
-				fam_parts.append(f"{rel} ({nm})")
-			elif rel:
-				fam_parts.append(rel)
-			elif nm:
-				fam_parts.append(nm)
-		family_line = ", ".join(fam_parts) if fam_parts else "-"
-
-		# Build occupation line from family members
-		family_rows = self.get("family_members") or []
-		occ_parts = []
-		for fm in family_rows:
-			nm = (fm.get("member_name") or "").strip()
-			occ = (fm.get("occupation") or "").strip()
-			if not occ:
-				continue
-			occ_parts.append(f"{nm}: {occ}" if (nm and len(family_rows) > 1) else occ)
-		occupation_line = "; ".join(occ_parts) if occ_parts else (fget("employment_status") or "-")
-
-		hospital_display = f"{hospital}, {hosp_loc}" if hosp_loc else hospital
-
-		funds_formatted = (
-			(
-				f"INR {int(funds_req):,} for "
-				f"{'surgery' if is_medical else 'the request'}, "
-				f"in addition to the existing insurance cover"
-			)
-			if funds_req
-			else "-"
-		)
-
+		source = fget("source_of_request")
 		intro_sentence = (
-			f"This request was submitted by {req_name} ({source}) on behalf of "
-			f"{ben_name}, who is currently undergoing {ailment}."
+			f"This request was submitted by {req_name}"
+			+ (f" ({source})" if source else "")
+			+ f" on behalf of {ben_name}."
 		)
 
 		lines = [
@@ -2034,18 +2158,64 @@ class CaseRegister(Document):
 				lines.append(f"**Comments:** {_sanitize_untrusted_text(previous_comments)}")
 			lines.append("")
 
-		lines.append("**Case Details:**")
+		# Asked at registration (provisional) — shown in every round.
+		age = fget("age")
+		lines.append("**Beneficiary Details:**")
 		lines.append(f"**Beneficiary:** {ben_name}")
-		lines.append(f"**Age:** {age} Yrs" if age and age != "-" else "**Age:** -")
-		lines.append(f"**Address:** {address}")
-		lines.append(f"**Family:** {family_line}")
-		lines.append(f"**Occupation:** {occupation_line}")
-		lines.append(f"**Monthly Family Income:** Rs {monthly_inc:,}" if monthly_inc else "**Monthly Family Income:** -")
-		lines.append(f"**Residence:** {residence}")
-		lines.append(f"**Ailment:** {ailment}" + (f", Treatment: {treatment}" if treatment else ""))
-		lines.append(f"**Hospital / Institution:** {hospital_display}")
-		lines.append(f"**Funds Requested:** {funds_formatted}")
-		lines.append(f"**Verification Notes:** =={condition}==")
+		lines.append(f"**Age:** {age} Yrs" if age else "**Age:** -")
+		lines.append(f"**Gender:** {fget('gender') or '-'}")
+		lines.append(f"**Mobile Number:** {fget('mobile_number') or '-'}")
+		lines.append(f"**Location:** {text('location')}")
+		lines.append(f"**Type of Request:** {fget('type_of_request') or '-'}")
+		lines.append(f"**Note about the individual:** {text('note_about_the_individual')}")
+		lines.append(f"**Funds Requested:** {inr(fget('funds_requested'))}")
+
+		hospital = ", ".join(
+			filter(None, [fget("hospital_institution_name"), fget("hospital_institution_location")])
+		)
+
+		if additional:
+			lines.append(f"**Hospital / Institution:** {_sanitize_untrusted_text(hospital) or '-'}")
+			lines.append(f"**Ailment / Course Details:** {text('ailment__course_details')}")
+			if is_medical:
+				lines.append(f"**Treatment:** {text('treatment')}")
+			lines.append("")
+			lines.append("**Additional Support Request:**")
+			lines.append(f"**Additional Amount Requested:** {inr(additional.funds_requested)}")
+			lines.append(f"**Total Funds Requested (incl. this):** =={inr(additional.total_funds_requested)}==")
+			lines.append(
+				f"**Purpose:** {_sanitize_untrusted_text(additional.purpose_of_additional_support or '-')}"
+			)
+
+		elif show_full_details:
+			annual_income = float(fget("annual_family_income") or 0)
+			district_state = ", ".join(filter(None, [fget("district"), fget("state")]))
+			insurance = fget("insurance_type") or "-"
+			if fget("insurance_coverage_details"):
+				insurance += f" — {text('insurance_coverage_details')}"
+
+			lines.append("")
+			lines.append("**Full Case Details:**")
+			lines.append(f"**Family Details:** {text('family_details')}")
+			lines.append(f"**Employment Status:** {fget('employment_status') or '-'}")
+			lines.append(f"**District / State:** {_sanitize_untrusted_text(district_state) or '-'}")
+			lines.append(f"**Hospital / Institution:** {_sanitize_untrusted_text(hospital) or '-'}")
+			lines.append(f"**Ailment / Course Details:** {text('ailment__course_details')}")
+			if is_medical:
+				lines.append(f"**Treatment:** {text('treatment')}")
+			lines.append(f"**Amount Already Spent:** {inr(fget('amount_already_spent'))}")
+			lines.append(
+				f"**Monthly Family Income:** {inr(annual_income / 12)}"
+				if annual_income
+				else "**Monthly Family Income:** -"
+			)
+			lines.append(f"**Residence Type:** {fget('residence_type') or '-'}")
+			lines.append(f"**Insurance:** {insurance}")
+			lines.append(f"**Physical Verification:** {fget('physical_verification') or '-'}")
+			if fget("physical_verification") == "Yes":
+				lines.append(f"**Verification Notes:** =={text('physical_verification_notes')}==")
+			lines.append(f"**Vulnerability Assessment:** {text('vulnerability_assessment')}")
+
 		lines.append("")
 		lines.append(
 			"The case summary and all supporting documents are attached for your reference."
@@ -2150,7 +2320,15 @@ def process_case_approval(
 	)
 
 	# ── Determine next state + trigger emails ──────────────────────────────────
-	if action == "Decline":
+	if action == "Decline" and _active_additional_request(doc):
+		# Only the additional request is declined — the case stays Approved
+		# on its earlier approved amount.
+		additional = _close_additional_request(doc, ADDITIONAL_STATUS_DECLINED)
+		doc.save(ignore_permissions=True)
+		_safe_commit(case_name)
+		_send_additional_request_outcome_email(doc, additional, ADDITIONAL_STATUS_DECLINED, comments, approver_name)
+
+	elif action == "Decline":
 		doc.case_status = CASE_STATUS_REJECTED
 		doc.current_approval_level = ""
 		doc.save(ignore_permissions=True)
@@ -2202,15 +2380,13 @@ def process_case_approval(
 			)
 
 		else:
-			already_verified_by_reviewer = any(
-				(log.action or "") == "Reviewer Approve" for log in (doc.get("case_approval_log") or [])
-			)
-
-			if already_verified_by_reviewer:
+			if _reviewer_approved_this_round(doc):
 				doc.case_status = CASE_STATUS_APPROVED
 				doc.current_approval_level = ""
 				if not doc.approved_date:
 					doc.approved_date = today()
+				if _active_additional_request(doc):
+					doc.current_request_status = ADDITIONAL_STATUS_APPROVED
 				doc.save(ignore_permissions=True)
 				_safe_commit(case_name)
 				doc._send_requestor_notification_email(
@@ -2218,7 +2394,7 @@ def process_case_approval(
 					comments=comments,
 					approver_name=approver_name,
 				)
-			elif _missing_full_details(doc):
+			elif not _active_additional_request(doc) and _missing_full_details(doc):
 				# Provisional approval complete — the requester now fills in
 				# the rest of the case (submit_full_details) before it goes
 				# to Final Verification.
@@ -2277,6 +2453,24 @@ def _do_withdraw_case(doc, reason):
 			+ (doc.case_status or "unknown")
 			+ "."
 		)
+
+	if _active_additional_request(doc):
+		# Withdraw just the additional request; the approved case stays.
+		additional = _close_additional_request(doc, ADDITIONAL_STATUS_WITHDRAWN)
+		doc.append(
+			"case_approval_log",
+			{
+				"date": today(),
+				"level": "",
+				"approver_name": doc.requestor_name or "",
+				"action": "Withdrawn",
+				"comments": reason,
+			},
+		)
+		doc.save(ignore_permissions=True)
+		_safe_commit(doc.name)
+		_send_additional_request_outcome_email(doc, additional, ADDITIONAL_STATUS_WITHDRAWN, reason)
+		return
 
 	doc.case_status = CASE_STATUS_WITHDRAWN
 	doc.current_approval_level = ""
@@ -2670,6 +2864,178 @@ def submit_full_details(case_name):
 	_notify_reviewers_of_provisional_approval(doc, last_approver_name)
 
 	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
+
+
+@frappe.whitelist()
+def request_additional_support(
+	case_name,
+	purpose,
+	funds_requested,
+	document=None,
+	hospital_institution_name=None,
+	hospital_institution_location=None,
+	ailment__course_details=None,
+	treatment=None,
+):
+	"""
+	Additional amount on an already Approved case. The approval levels come
+	from the new running total (first request + approved additional amounts +
+	this one): levels that already approved the case are skipped, so only the
+	higher levels the total now needs approve it. If the total stays within an
+	already-approved level, that level's approver approves it again. Then
+	Final Verification and final approval, same as the first request.
+	"""
+	from support_iid.api.microsoft_graph import build_approval_stages
+
+	doc = frappe.get_doc("Case Register", case_name)
+
+	user = frappe.session.user
+	roles = frappe.get_roles(user)
+	if not (
+		user == "Administrator"
+		or "System Manager" in roles
+		or "Support IID Reviewer" in roles
+		or (doc.requestor_email or "").strip().lower() == user.strip().lower()
+	):
+		frappe.throw("You don't have permission to request additional support for this case.", frappe.PermissionError)
+
+	if doc.case_status != CASE_STATUS_APPROVED:
+		frappe.throw("Additional support can only be requested on an Approved case.")
+	if _active_additional_request(doc):
+		frappe.throw("An additional support request is already in progress for this case.")
+
+	purpose = (purpose or "").strip()
+	if not purpose:
+		frappe.throw("Please enter the purpose of the additional support.")
+	try:
+		amount = float(str(funds_requested).replace(",", "").strip())
+	except (TypeError, ValueError):
+		amount = 0
+	if amount <= 0:
+		frappe.throw("Please enter the fund requested (estimate) as an amount greater than zero.")
+
+	total = _approved_funds_total(doc) + amount
+	needed = build_approval_stages(doc.requestor_email, total)
+	if not needed:
+		frappe.throw("Could not find the approvers for this amount. Please check the Approval Hierarchy.")
+
+	approved_levels = {
+		(s.case_approval_level_decription or "").strip()
+		for s in (doc.get("case_approval_stage") or [])
+		if (s.case_approval_status or "").strip() == "Approve"
+	}
+	new_stages = [
+		s for s in needed if (s.get("case_approval_level_decription") or "").strip() not in approved_levels
+	] or [needed[-1]]
+
+	# The approved request on the form moves down into history; the new
+	# request takes its place on the main form fields.
+	doc.append("additional_support_requests", _current_request_as_history_row(doc, ADDITIONAL_STATUS_APPROVED))
+	doc.request_date = today()
+	doc.funds_requested = amount
+	doc.purpose_of_additional_support = purpose
+	doc.additional_support_document = document or None
+	doc.total_funds_requested = total
+	doc.current_request_status = ADDITIONAL_STATUS_PENDING
+	# Prefilled from the previous request in the dialog; the requester may change them.
+	doc.hospital_institution_name = (hospital_institution_name or "").strip() or doc.hospital_institution_name
+	doc.hospital_institution_location = (
+		(hospital_institution_location or "").strip() or doc.hospital_institution_location
+	)
+	doc.ailment__course_details = (ailment__course_details or "").strip() or doc.ailment__course_details
+	if treatment is not None:
+		doc.treatment = (treatment or "").strip()
+	# Set again when this request gets its final approval.
+	doc.approved_date = None
+	first_new_idx = len(doc.get("case_approval_stage") or [])
+	for i, s in enumerate(new_stages):
+		doc.append(
+			"case_approval_stage",
+			{
+				"case_approval_level_decription": s.get("case_approval_level_decription"),
+				"case_approval_status": "Awaiting For Approval" if i == 0 else "",
+				"approver_name": s.get("approver_name") or "",
+				"approver_email": s.get("approver_email") or "",
+			},
+		)
+	first_level = new_stages[0].get("case_approval_level_decription") or f"Level {first_new_idx + 1}"
+	doc.append(
+		"case_approval_log",
+		{
+			"date": today(),
+			"level": first_level,
+			"approver_name": frappe.utils.get_fullname(user) or user,
+			"approver_name_email": user,
+			"action": "Additional Support Requested",
+			"comments": f"INR {int(amount):,} (total INR {int(total):,}) — {purpose}",
+		},
+	)
+	doc.case_status = CASE_STATUS_PENDING
+	doc.current_approval_level = first_level
+	doc.save(ignore_permissions=True)
+	_safe_commit(case_name)
+
+	if document:
+		file_name = frappe.db.get_value(
+			"File", {"file_url": document, "attached_to_name": ["is", "not set"]}, "name"
+		)
+		if file_name:
+			frappe.db.set_value(
+				"File",
+				file_name,
+				{"attached_to_doctype": "Case Register", "attached_to_name": doc.name},
+				update_modified=False,
+			)
+			_safe_commit(case_name)
+
+	doc._send_approval_request_email(
+		stage_idx=first_new_idx,
+		case_pdf_path=doc.case_document or None,
+		include_supporting_docs=True,
+		previous_action="Additional Support Requested",
+		previous_comments=purpose,
+	)
+	_send_additional_request_outcome_email(doc, _active_additional_request(doc), ADDITIONAL_STATUS_PENDING)
+
+	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
+
+
+def _send_additional_request_outcome_email(doc, additional, outcome, comments=None, approver_name=None):
+	setting = frappe.db.get_single_value("Support IID Settings", "send_requestor_notification_emails")
+	if (setting is not None and not setting) or not doc.requestor_email or not additional:
+		return
+
+	amount = f"INR {int(additional.funds_requested or 0):,}"
+	beneficiary = doc.beneficiary_name or "the beneficiary"
+	if outcome == ADDITIONAL_STATUS_PENDING:
+		subject = f"Additional Support Requested - [{doc.name}] - {doc.beneficiary_name or ''}"
+		body = (
+			f"The additional support request of **{amount}** for {beneficiary} has been "
+			f"received and is now pending **{doc.current_approval_level}** approval."
+		)
+	elif outcome == ADDITIONAL_STATUS_DECLINED:
+		subject = f"Additional Support Declined - [{doc.name}] - {doc.beneficiary_name or ''}"
+		body = (
+			f"The additional support request of **{amount}** for {beneficiary} was declined "
+			f"by **{approver_name or 'the approver'}**. The earlier approved support on this "
+			f"case is not affected."
+		)
+	else:
+		subject = f"Additional Support Withdrawn - [{doc.name}] - {doc.beneficiary_name or ''}"
+		body = (
+			f"The additional support request of **{amount}** for {beneficiary} has been "
+			f"withdrawn. The earlier approved support on this case is not affected."
+		)
+
+	lines = [f"Dear {doc.requestor_name or 'Team'},", "", body, f"**Case ID:** {doc.name}"]
+	if comments:
+		lines += ["", "**Notes:**", _sanitize_untrusted_text(comments)]
+	lines += ["", "Regards,"]
+
+	try:
+		_send_plain_email(recipients=[doc.requestor_email], subject=subject, lines=lines)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), f"Additional support email failed — {doc.name}")
 
 
 @frappe.whitelist()

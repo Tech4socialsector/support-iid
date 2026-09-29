@@ -294,6 +294,25 @@ def get_current_approver_for_level(requestor_email: str, level_name: str):
 	return None
 
 
+def build_approval_stages(requestor_email: str, funds_requested: float) -> list:
+	"""
+	Same stage logic as get_employee_details (Approval Hierarchy first, Graph
+	manager chain as the fallback), for server-side callers such as an
+	additional support request on an existing case.
+	"""
+	funds = float(funds_requested or 0)
+	try:
+		hierarchy_name = _find_hierarchy_doc(requestor_email)
+		if hierarchy_name:
+			return _stages_from_hierarchy(hierarchy_name, funds)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), "Approval stage build failed")
+
+	headers = {"Authorization": f"Bearer {get_access_token()}"}
+	manager_chain = get_manager_chain(requestor_email, headers, max_depth=3)
+	return _stages_from_graph_chain(manager_chain, funds)
+
+
 def get_manager_chain(email: str, headers: dict, max_depth: int = 3) -> list:
 	chain = []
 	current = email
