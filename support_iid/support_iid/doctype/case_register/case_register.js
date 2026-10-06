@@ -245,6 +245,27 @@ function case_register_branded_confirm(message, declaration_label, on_confirm) {
 }
 
 frappe.ui.form.on("Case Register", {
+	setup(frm) {
+		// District master is filtered by the chosen State.
+		frm.set_query("district", function () {
+			return frm.doc.state ? { filters: { state: frm.doc.state } } : {};
+		});
+	},
+
+	state(frm) {
+		// District names are "<District> - <State>"; drop one from another state.
+		if (frm.doc.district && !frm.doc.district.endsWith(" - " + frm.doc.state)) {
+			frm.set_value("district", "");
+		}
+	},
+
+	district(frm) {
+		if (!frm.doc.district || frm.doc.state) return;
+		frappe.db.get_value("District", frm.doc.district, "state").then(function (r) {
+			if (r && r.message && r.message.state) frm.set_value("state", r.message.state);
+		});
+	},
+
 	onload(frm) {
 		if (!frm.is_new()) return;
 
@@ -1168,15 +1189,22 @@ function case_register_validate_dob(frm) {
 	return true;
 }
 
-function apply_requester_post_submit_view(frm) {
-	var roles = frappe.user_roles || [];
-	var is_requester_only =
-		roles.includes("Support IID Requester") &&
-		!roles.includes("System Manager") &&
-		!roles.includes("Support IID Reviewer") &&
-		!roles.includes("Support IID Approver");
+// The logged-in user is the requester of this case and has no broader
+// Reviewer/System Manager access. Includes approvers who filed the case
+// themselves — on their own case they get the requester view.
+function case_register_is_own_case(frm) {
+	return (frm.doc.requestor_email || "").trim().toLowerCase() === (frappe.session.user || "").toLowerCase();
+}
 
-	if (!is_requester_only || frm.doc.case_status === "Draft" || frm.is_new()) return;
+function case_register_is_requester_view(frm) {
+	var roles = frappe.user_roles || [];
+	if (roles.includes("System Manager") || roles.includes("Support IID Reviewer")) return false;
+	if (!roles.includes("Support IID Requester")) return false;
+	return !roles.includes("Support IID Approver") || frm.is_new() || case_register_is_own_case(frm);
+}
+
+function apply_requester_post_submit_view(frm) {
+	if (!case_register_is_requester_view(frm) || frm.doc.case_status === "Draft" || frm.is_new()) return;
 
 	if (frm.doc.case_status === "Sent Back") {
 		frm.page.set_primary_action(__("Resubmit Case"), () => resubmit_case_dialog(frm));
@@ -1237,13 +1265,15 @@ function resubmit_case_dialog(frm) {
 
 function apply_approver_read_only_view(frm) {
 	var roles = frappe.user_roles || [];
-	var is_approver_only =
+	// Read-only for approvers on other people's cases — on their own case
+	// they get the requester view instead (apply_requester_post_submit_view).
+	var is_approver_view =
 		roles.includes("Support IID Approver") &&
 		!roles.includes("System Manager") &&
 		!roles.includes("Support IID Reviewer") &&
-		!roles.includes("Support IID Requester");
+		!case_register_is_own_case(frm);
 
-	if (!is_approver_only || frm.is_new()) return;
+	if (!is_approver_view || frm.is_new()) return;
 
 	frm.disable_form();
 }

@@ -1339,7 +1339,11 @@ def get_permission_query_conditions(user=None, doctype=None):
 
 	approver_scope_email = _approver_only_scope_email(user)
 	if approver_scope_email:
-		return _APPROVER_VISIBLE_CASE_CONDITION.format(approver_email=frappe.db.escape(approver_scope_email))
+		# An approver who also files cases still sees their own requests.
+		return "({0}) or `tabCase Register`.`requestor_email` = {1}".format(
+			_APPROVER_VISIBLE_CASE_CONDITION.format(approver_email=frappe.db.escape(approver_scope_email)),
+			frappe.db.escape(approver_scope_email),
+		)
 
 	if _hide_unconfigured_cases_from(user):
 		return _CASE_HAS_CONFIGURED_APPROVER_CONDITION
@@ -1358,6 +1362,11 @@ def has_permission(doc, ptype=None, user=None, debug=False):
 	if approver_scope_email:
 		stages = doc.get("case_approval_stage") or []
 		email = approver_scope_email.strip().lower()
+
+		# An approver who also files cases (Requester role too) keeps full
+		# requester access to their own cases, new ones included.
+		if doc.is_new() or (doc.get("requestor_email") or "").strip().lower() == email:
+			return True
 
 		def is_pending(stage):
 			return (stage.get("case_approval_status") or "").strip() in ("", "Awaiting For Approval")
@@ -1417,7 +1426,20 @@ class CaseRegister(Document):
 		self._validate_mobile_fields()
 		self._validate_currency_fields()
 		self._validate_name_fields()
+		self._validate_state_district()
 		self._validate_mandatory_documents()
+
+	def _validate_state_district(self):
+		if self.flags.ignore_format_validation or not self.get("district"):
+			return
+		district_state = frappe.db.get_value("District", self.district, "state")
+		if not self.get("state"):
+			self.state = district_state
+		elif district_state and district_state != self.state:
+			frappe.throw(
+				f"District {frappe.bold(self.district)} does not belong to State {frappe.bold(self.state)}.",
+				title="Invalid District",
+			)
 
 	def _validate_data_fields(self):
 		# Frappe core's own Email/Phone/Name fieldtype-option validation

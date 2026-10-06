@@ -1,0 +1,89 @@
+{
+ "actions": [],
+ "allow_import": 1,
+ "autoname": "format:{district_name} - {state}",
+ "creation": "2026-10-05 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "district_name",
+  "state"
+ ],
+ "fields": [
+  {
+   "fieldname": "district_name",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "District Name",
+   "reqd": 1
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "State",
+   "options": "State",
+   "reqd": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "links": [],
+ "modified": "2026-10-05 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Master",
+ "name": "District",
+ "naming_rule": "Expression",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Support IID Reviewer",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Support IID Requester"
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Support IID Approver"
+  }
+ ],
+ "row_format": "Dynamic",
+ "search_fields": "state",
+ "show_title_field_in_link": 1,
+ "sort_field": "district_name",
+ "sort_order": "ASC",
+ "states": [],
+ "title_field": "district_name",
+ "track_changes": 1
+}

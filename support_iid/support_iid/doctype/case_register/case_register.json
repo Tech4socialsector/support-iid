@@ -185,14 +185,17 @@
    "options": "Phone"
   },
   {
+   "description": "Select the State first — only its districts are listed.",
    "fieldname": "district",
-   "fieldtype": "Data",
-   "label": "District"
+   "fieldtype": "Link",
+   "label": "District",
+   "options": "District"
   },
   {
    "fieldname": "state",
-   "fieldtype": "Data",
-   "label": "State"
+   "fieldtype": "Link",
+   "label": "State",
+   "options": "State"
   },
   {
    "fieldname": "request_details_section",
@@ -507,7 +510,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-09-28 16:00:00.000000",
+ "modified": "2026-10-05 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Register",
