@@ -45,8 +45,6 @@ CASE_APPROVAL_LEVEL_FULL_DETAILS = "Full Details Pending"
 # in case_register.js — keep the two in sync.
 FULL_DETAIL_FIELDS = (
 	"family_details",
-	"state",
-	"district",
 	"employment_status",
 	"primary_contact_mobile",
 	"hospital_institution_name",
@@ -91,6 +89,13 @@ def is_provisionally_approved(doc):
 		(log.get("action") or "") in ("Reviewer Approve", "Reviewer Send Back")
 		for log in (doc.get("case_approval_log") or [])
 	)
+
+
+def _district_label(value):
+	"""District record names are "<District> - <State>"; show just the district."""
+	if not value:
+		return ""
+	return frappe.db.get_value("District", value, "district_name") or value.rsplit(" - ", 1)[0]
 
 
 def _missing_full_details(doc):
@@ -1067,6 +1072,7 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 	# the full-details sections appear once those are in (_generate_and_save_pdf
 	# sets show_full_details, and rebuilds the PDF on submit_full_details).
 	show_full_details = bool(doc_data.get("show_full_details"))
+	district_name = _district_label(fgt("district"))
 
 	# Addressee block
 	for line in filter(
@@ -1074,7 +1080,7 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 		[
 			fgt("beneficiary_name"),
 			fgt("location"),
-			", ".join(filter(None, [fgt("district"), fgt("state")])),
+			", ".join(filter(None, [district_name, fgt("state")])),
 		],
 	):
 		story.append(Paragraph(escape(line), st["addr"]))
@@ -1138,6 +1144,8 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 				("Gender", fgt("gender")),
 				("Mobile Number", fgt("mobile_number")),
 				("Location", fgt("location")),
+				("District", district_name),
+				("State", fgt("state")),
 				("Funds Requested", fmt_rs(doc_data.get("funds_requested"))),
 			]
 		)
@@ -1153,8 +1161,6 @@ def _build_case_pdf_bytes(doc_data: dict) -> bytes:
 				[
 					("Employment Status", fgt("employment_status")),
 					("Primary Contact Mobile", fgt("primary_contact_mobile")),
-					("District", fgt("district")),
-					("State", fgt("state")),
 				]
 			)
 		)
@@ -2139,6 +2145,7 @@ class CaseRegister(Document):
 			return f"INR {int(float(value or 0)):,}" if value else "-"
 
 		is_medical = (fget("type_of_request") or "").lower() == "medical"
+		district_name = _district_label(fget("district"))
 		additional = _active_additional_request(self)
 		show_full_details = not additional and is_provisionally_approved(self)
 
@@ -2188,6 +2195,8 @@ class CaseRegister(Document):
 		lines.append(f"**Gender:** {fget('gender') or '-'}")
 		lines.append(f"**Mobile Number:** {fget('mobile_number') or '-'}")
 		lines.append(f"**Location:** {text('location')}")
+		district_state = ", ".join(filter(None, [district_name, fget("state")]))
+		lines.append(f"**District / State:** {_sanitize_untrusted_text(district_state) or '-'}")
 		lines.append(f"**Type of Request:** {fget('type_of_request') or '-'}")
 		lines.append(f"**Note about the individual:** {text('note_about_the_individual')}")
 		lines.append(f"**Funds Requested:** {inr(fget('funds_requested'))}")
@@ -2211,7 +2220,6 @@ class CaseRegister(Document):
 
 		elif show_full_details:
 			annual_income = float(fget("annual_family_income") or 0)
-			district_state = ", ".join(filter(None, [fget("district"), fget("state")]))
 			insurance = fget("insurance_type") or "-"
 			if fget("insurance_coverage_details"):
 				insurance += f" — {text('insurance_coverage_details')}"
@@ -2220,7 +2228,6 @@ class CaseRegister(Document):
 			lines.append("**Full Case Details:**")
 			lines.append(f"**Family Details:** {text('family_details')}")
 			lines.append(f"**Employment Status:** {fget('employment_status') or '-'}")
-			lines.append(f"**District / State:** {_sanitize_untrusted_text(district_state) or '-'}")
 			lines.append(f"**Hospital / Institution:** {_sanitize_untrusted_text(hospital) or '-'}")
 			lines.append(f"**Ailment / Course Details:** {text('ailment__course_details')}")
 			if is_medical:

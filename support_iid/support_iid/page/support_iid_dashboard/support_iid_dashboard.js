@@ -369,17 +369,24 @@ class SupportIIDDashboard {
 			.sd-detail-panel { display:none; padding:22px 24px; }
 			.sd-detail-panel.on { display:block; }
 
-			.sd-section { padding:0 20px 20px 0; }
-			.sd-section-title { font-size:12.5px; font-weight:700; color:var(--text-color,#1a1a1a); margin-bottom:14px; padding-bottom:9px; border-bottom:2px solid var(--border-color,#d1d8dd); }
-			.sd-field-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(180px, 1fr)); gap:14px 18px; }
+			/* Each section is a full-width card; fields sit on a fixed 3-column
+			   grid so labels line up from one section to the next. */
+			.sd-section {
+				border:1px solid var(--border-color,#e3e8ec); border-radius:10px; padding:14px 18px 16px;
+				margin-bottom:14px; background:var(--card-bg,#fff);
+			}
+			.sd-section-title {
+				font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#1c6fc0;
+				margin:0 0 12px; padding-bottom:8px; border-bottom:1px solid var(--border-color,#e3e8ec);
+			}
+			[data-theme="dark"] .sd-section-title { color:#60a5fa; }
+			.sd-field-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:14px 24px; }
 			.sd-field-label { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; color:var(--text-muted,#8d99a6); margin-bottom:5px; }
 			.sd-field-value { font-size:13px; font-weight:500; color:var(--text-color,#1a1a1a); word-break:break-word; line-height:1.4; }
 			.sd-field-value.sd-empty { color:#b8bfc6; font-weight:400; font-style:italic; }
 
-			.sd-detail-grid { display:grid; grid-template-columns:1fr; column-gap:28px; }
-			@media (min-width: 820px) { .sd-detail-grid { grid-template-columns: repeat(2, 1fr); } }
-			.sd-detail-grid .sd-section:nth-child(odd) { border-right:1px solid var(--border-color,#eceef0); }
-			.sd-detail-grid .sd-section:last-child { border-right:none; }
+			.sd-detail-grid { display:block; }
+			@media (max-width: 820px) { .sd-field-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); } }
 			.sd-span-full { grid-column:1/-1; }
 
 			.sd-family-table { border-collapse:collapse; width:100%; }
@@ -1346,21 +1353,21 @@ class SupportIIDDashboard {
 			</div>`;
 		}).join('') : '<div class="sd-empty-note">No documents uploaded.</div>') + '</div>';
 
-		var fam = doc.family_members || [];
-		var fam_html = fam.length ? `
+		var history = doc.additional_support_requests || [];
+		var history_html = history.length ? `
 			<div style="overflow-x:auto">
 			<table class="sd-family-table">
-				<thead><tr><th>Name</th><th>Relationship</th><th>Age</th><th>Occupation</th><th>Monthly Income</th><th>Qualification</th></tr></thead>
-				<tbody>${fam.map((m) => `<tr>
-					<td>${frappe.utils.escape_html(m.member_name || '')}</td>
-					<td>${frappe.utils.escape_html(m.relationship || '')}</td>
-					<td>${frappe.utils.escape_html(m.age || '')}</td>
-					<td>${frappe.utils.escape_html(m.occupation || '')}</td>
-					<td>${format_currency(m.monthly_income || 0)}</td>
-					<td>${frappe.utils.escape_html(m.qualification || '')}</td>
+				<thead><tr><th>Request Date</th><th>Purpose</th><th>Fund Requested</th><th>Total</th><th>Status</th><th>${isMedical ? 'Hospital' : 'Institution'}</th></tr></thead>
+				<tbody>${history.map((r) => `<tr>
+					<td>${r.request_date ? frappe.datetime.str_to_user(r.request_date) : ''}</td>
+					<td>${frappe.utils.escape_html(r.purpose_of_additional_support || '')}</td>
+					<td>${format_currency(r.funds_requested || 0)}</td>
+					<td>${format_currency(r.total_funds_requested || 0)}</td>
+					<td>${frappe.utils.escape_html(r.status || '')}</td>
+					<td>${frappe.utils.escape_html(r.hospital_institution_name || '')}</td>
 				</tr>`).join('')}</tbody>
 			</table>
-			</div>` : '<div class="sd-empty-note">No family members added.</div>';
+			</div>` : '<div class="sd-empty-note">No previous requests.</div>';
 
 		var stages = doc.case_approval_stage || [];
 		var stages_html = stages.length ? stages.map((s) => {
@@ -1387,7 +1394,7 @@ class SupportIIDDashboard {
 					<div class="sd-hero-stats">
 						<div class="sd-hero-stat"><div class="sd-hero-stat-label">Case ID</div><div class="sd-hero-stat-value">${frappe.utils.escape_html(doc.name)}</div></div>
 						<div class="sd-hero-stat"><div class="sd-hero-stat-label">Case Type</div><div class="sd-hero-stat-value">${frappe.utils.escape_html(doc.type_of_request || '—')}</div></div>
-						<div class="sd-hero-stat"><div class="sd-hero-stat-label">Location</div><div class="sd-hero-stat-value">${frappe.utils.escape_html(doc.district || '')}${doc.state ? ', ' + frappe.utils.escape_html(doc.state) : ''}</div></div>
+						<div class="sd-hero-stat"><div class="sd-hero-stat-label">Location</div><div class="sd-hero-stat-value">${frappe.utils.escape_html(doc.location || doc.state || '—')}</div></div>
 						<div class="sd-hero-stat"><div class="sd-hero-stat-label">Filed</div><div class="sd-hero-stat-value">${doc.request_date ? frappe.datetime.str_to_user(doc.request_date) : '—'}</div></div>
 					</div>
 				</div>
@@ -1400,7 +1407,7 @@ class SupportIIDDashboard {
 
 			<div class="sd-detail-tabs">
 				<div class="sd-detail-tab on" data-tab="overview">Overview</div>
-				<div class="sd-detail-tab" data-tab="family">Family</div>
+				<div class="sd-detail-tab" data-tab="history">Previous Requests${history.length ? ' (' + history.length + ')' : ''}</div>
 				<div class="sd-detail-tab" data-tab="documents">Documents</div>
 				<div class="sd-detail-tab" data-tab="activity">Approval &amp; Activity</div>
 			</div>
@@ -1408,67 +1415,90 @@ class SupportIIDDashboard {
 			<div class="sd-detail-panel on" data-panel="overview">
 				<div class="sd-detail-grid">
 					<div class="sd-section">
-						<div class="sd-section-title">Requestor</div>
+						<div class="sd-section-title">Request</div>
 						<div class="sd-field-grid">
-							${row_copy('Requestor Email', doc.requestor_email)}
-							${row('Requestor Name', doc.requestor_name)}
-							${row('Department', doc.department)}
-							${row('Work Location', doc.work_location)}
+							${row('Type of Request', doc.type_of_request)}
 							${row('Source of Request', doc.source_of_request)}
+							${row('Request Date', doc.request_date ? frappe.datetime.str_to_user(doc.request_date) : '')}
+							${row('Case Status', doc.case_status)}
+							${row('Current Approval Level', doc.current_approval_level)}
 						</div>
 					</div>
 					<div class="sd-section">
-						<div class="sd-section-title">Beneficiary</div>
+						<div class="sd-section-title">Beneficiary Information</div>
 						<div class="sd-field-grid">
+							${row('Beneficiary Name', doc.beneficiary_name)}
 							${row('Age', doc.age)}
 							${row('Gender', doc.gender)}
 							${row('Mobile Number', doc.mobile_number)}
-							${row_copy('Email', doc.email)}
-							${row('Qualification', doc.qualification)}
+							${row('Location', doc.location)}
+							${row('State', doc.state)}
+							${row('District', doc.district ? doc.district.replace(/ - [^-]+$/, '') : '')}
+							${row('Funds Requested', doc.funds_requested ? format_currency(doc.funds_requested) : '')}
+							${row('Note about the individual', doc.note_about_the_individual, true)}
+						</div>
+					</div>
+					<div class="sd-section">
+						<div class="sd-section-title">Family &amp; Contact</div>
+						<div class="sd-field-grid">
 							${row('Employment Status', doc.employment_status)}
-							${row('Marital Status', doc.marital_status)}
-							${row('District / State', (doc.district || '') + (doc.state ? ', ' + doc.state : ''))}
-							${row('Pincode', doc.pincode)}
-							${row('Address', doc.address_line_1, true)}
-							${row('Note about individual', doc.note_about_the_individual, true)}
+							${row('Primary Contact Mobile', doc.primary_contact_mobile)}
+							${row('Family Details', doc.family_details, true)}
 						</div>
 					</div>
 					<div class="sd-section">
 						<div class="sd-section-title">Request Details</div>
 						<div class="sd-field-grid">
 							${row(isMedical ? 'Hospital Name' : 'Institution Name', doc.hospital_institution_name)}
-							${row('Location', doc.hospital_institution_location)}
-							${row('Funds Requested', format_currency(doc.funds_requested || 0))}
-							${row('Amount Already Spent', format_currency(doc.amount_already_spent || 0))}
+							${row(isMedical ? 'Hospital Location' : 'Institution Location', doc.hospital_institution_location)}
 							${isMedical ? row('Treatment', doc.treatment) : ''}
+							${row('Amount Already Spent', doc.amount_already_spent ? format_currency(doc.amount_already_spent) : '')}
+							${row(isMedical ? 'Reviewer Case Diagnosis' : 'Reviewer Course Details', doc.reviewer_case_diagnosis)}
 							${row(isMedical ? 'Ailment Details' : 'Course Details', doc.ailment__course_details, true)}
 						</div>
 					</div>
 					<div class="sd-section">
-						<div class="sd-section-title">Financial &amp; Insurance</div>
+						<div class="sd-section-title">Financial Information &amp; Insurance</div>
 						<div class="sd-field-grid">
-							${row('Annual Family Income', format_currency(doc.annual_family_income || 0))}
+							${row('Annual Family Income', doc.annual_family_income ? format_currency(doc.annual_family_income) : '')}
 							${row('Residence Type', doc.residence_type)}
 							${row('Insurance Type', doc.insurance_type)}
-							${row('Existing Debt', doc.existing_debt, true)}
-							${row('Residence Details', doc.residence_details, true)}
-							${row('Insurance Details', doc.insurance_coverage_details, true)}
+							${row('Insurance Coverage Details', doc.insurance_coverage_details, true)}
 						</div>
 					</div>
-					<div class="sd-section sd-span-full">
-						<div class="sd-section-title">Verification &amp; Assessment</div>
+					<div class="sd-section">
+						<div class="sd-section-title">Verification</div>
 						<div class="sd-field-grid">
 							${row('Physical Verification', doc.physical_verification)}
 							${row('Milaap Campaign Link', doc.milaap_campaign_link)}
-							${row('Verification Notes', doc.physical_verification_notes, true)}
-							${row('Genuineness Assessment', doc.genuineness_assessment, true)}
+							${doc.physical_verification === 'Yes' ? row('Verification Notes', doc.physical_verification_notes, true) : ''}
 							${row('Vulnerability Assessment', doc.vulnerability_assessment, true)}
-							${row('Milaap Recommendation', doc.milaap_recommendation, true)}
 						</div>
 					</div>
-					<div class="sd-section sd-span-full">
+					${doc.purpose_of_additional_support ? `
+					<div class="sd-section">
+						<div class="sd-section-title">Additional Support</div>
+						<div class="sd-field-grid">
+							${row('Status', doc.current_request_status)}
+							${row('Total Funds Requested', doc.total_funds_requested ? format_currency(doc.total_funds_requested) : '')}
+							${row('Document', doc.additional_support_document ? 'Attached' : '')}
+							${row('Purpose of Additional Support', doc.purpose_of_additional_support, true)}
+						</div>
+					</div>` : ''}
+					<div class="sd-section">
+						<div class="sd-section-title">Requester Information</div>
+						<div class="sd-field-grid">
+							${row_copy('Requestor Email', doc.requestor_email)}
+							${row('Requestor Name', doc.requestor_name)}
+							${row('Requestor Mobile', doc.requestor_mobile_number)}
+							${row('Work Location', doc.work_location)}
+							${row('Department', doc.department)}
+						</div>
+					</div>
+					<div class="sd-section">
 						<div class="sd-section-title">Closure of Case</div>
 						<div class="sd-field-grid">
+							${row('Approved Date', doc.approved_date ? frappe.datetime.str_to_user(doc.approved_date) : '')}
 							${row('Approved Amount', doc.approved_amount ? format_currency(doc.approved_amount) : '')}
 							${row('Date of Transfer', doc.date_of_transfer ? frappe.datetime.str_to_user(doc.date_of_transfer) : '')}
 							${row('UTR Details', doc.utr_details)}
@@ -1479,7 +1509,7 @@ class SupportIIDDashboard {
 				</div>
 			</div>
 
-			<div class="sd-detail-panel" data-panel="family">${fam_html}</div>
+			<div class="sd-detail-panel" data-panel="history">${history_html}</div>
 			<div class="sd-detail-panel" data-panel="documents">${docs_html}</div>
 			<div class="sd-detail-panel" data-panel="activity">
 				<div class="sd-detail-grid">

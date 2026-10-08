@@ -6,6 +6,22 @@ if (!document.getElementById('siid-office-preview-script')) {
 	document.head.appendChild(siid_preview_script);
 }
 
+// Show empty read-only fields on the Case Register form (and its table-row
+// popups) instead of hiding them, so a question skipped at registration still
+// appears, blank, once the form is read-only. Overrides only the site's "Hide
+// Empty Read-Only Fields" setting, and only while a Case Register form is open.
+if (frappe.defaults && frappe.defaults.is_enabled && !frappe.defaults._cr_show_empty_patched) {
+	frappe.defaults._cr_show_empty_patched = true;
+	var _cr_original_is_enabled = frappe.defaults.is_enabled;
+	frappe.defaults.is_enabled = function (key) {
+		if (key === "hide_empty_read_only_fields") {
+			var route = frappe.get_route ? frappe.get_route() : [];
+			if (route[0] === "Form" && route[1] === "Case Register") return false;
+		}
+		return _cr_original_is_enabled.apply(this, arguments);
+	};
+}
+
 $(
 	"<style>" +
 		".sd-mandatory-row { border-left:3px solid #c0392b; background:#fdf3f2; }" +
@@ -411,6 +427,7 @@ frappe.ui.form.on("Case Register", {
 		apply_approver_action_button(frm);
 		apply_reviewer_final_approval_button(frm);
 		apply_full_details_submit_button(frm);
+		apply_full_details_highlight(frm);
 		apply_additional_support_button(frm);
 		apply_case_status_indicator(frm);
 		case_register_resync_stale_roles(frm);
@@ -486,8 +503,6 @@ const CASE_APPROVAL_LEVEL_FULL_DETAILS = "Full Details Pending";
 // case_register.py — keep the two in sync.
 const _CASE_REGISTER_FULL_DETAIL_FIELDS = [
 	"family_details",
-	"state",
-	"district",
 	"employment_status",
 	"primary_contact_mobile",
 	"hospital_institution_name",
@@ -527,6 +542,8 @@ const _CASE_REGISTER_PROVISIONAL_FIELDS = [
 	"gender",
 	"mobile_number",
 	"location",
+	"state",
+	"district",
 	"note_about_the_individual",
 	"funds_requested",
 ];
@@ -591,6 +608,50 @@ function apply_full_details_visibility(frm) {
 	_CASE_REGISTER_FULL_DETAIL_FIELDS.concat(_CASE_REGISTER_PROVISIONAL_FIELDS).forEach(function (fieldname) {
 		frm.refresh_field(fieldname);
 	});
+}
+
+if (!document.getElementById("case-register-needs-input-style")) {
+	var needs_input_style = document.createElement("style");
+	needs_input_style.id = "case-register-needs-input-style";
+	needs_input_style.textContent =
+		".cr-needs-input .control-label { color:#b45309 !important; font-weight:600; }" +
+		".cr-needs-input input, .cr-needs-input textarea, .cr-needs-input select {" +
+		"  background:#fff7e6 !important; border:1px solid #f5b041 !important; }" +
+		"[data-theme='dark'] .cr-needs-input input, [data-theme='dark'] .cr-needs-input textarea," +
+		"[data-theme='dark'] .cr-needs-input select { background:rgba(245,176,65,.12) !important; }" +
+		"[data-theme='dark'] .cr-needs-input .control-label { color:#fbbf24 !important; }";
+	document.head.appendChild(needs_input_style);
+}
+
+// While full details are pending: an orange banner, and every full-details
+// question this user can edit is tinted amber until it's filled.
+function apply_full_details_highlight(frm) {
+	var on = case_register_awaiting_full_details(frm);
+	if (on) {
+		frm.set_intro(
+			__("Provisionally approved — please fill in the highlighted fields and click Submit Full Details."),
+			"orange"
+		);
+	} else if (frm._cr_full_details_intro) {
+		frm.set_intro();
+	}
+	frm._cr_full_details_intro = on;
+
+	_CASE_REGISTER_FULL_DETAIL_FIELDS.forEach(function (fieldname) {
+		var field = frm.get_field(fieldname);
+		if (!field || !field.$wrapper) return;
+		var value = frm.doc[fieldname];
+		var empty = value === null || value === undefined || value === "" || value === 0;
+		var editable = field.disp_status === "Write";
+		field.$wrapper.toggleClass("cr-needs-input", !!(on && editable && empty));
+	});
+
+	if (!frm.$wrapper.data("cr-needs-input-guard")) {
+		frm.$wrapper.data("cr-needs-input-guard", true);
+		frm.$wrapper.on("dirty", function () {
+			apply_full_details_highlight(frm);
+		});
+	}
 }
 
 function apply_full_details_submit_button(frm) {
