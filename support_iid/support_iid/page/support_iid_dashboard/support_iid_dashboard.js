@@ -767,7 +767,7 @@ class SupportIIDDashboard {
 		var matching = this.rows.filter(filterFn);
 		var columns = DRILLDOWN_COLUMNS[column_preset] || DRILLDOWN_COLUMNS.default;
 		var state = { search: '', sort_field: 'request_date', sort_order: 'desc', page: 0 };
-		var PAGE_SIZE = 15;
+		var PAGE_SIZE = 100;
 		var current_detail_doc = null;
 
 		function display_amount(c) {
@@ -845,6 +845,7 @@ class SupportIIDDashboard {
 			current_detail_doc = null;
 			modal.removeClass('sd-modal-narrow');
 			modal.find('#sd-modal-back').hide();
+			modal.find('#sd-open-in-frappe').hide();
 			modal.find('.sd-modal-header-controls').css('display', 'flex');
 			modal.find('#sd-modal-title-text').text(title);
 			modal.find('#sd-modal-count').show();
@@ -859,6 +860,7 @@ class SupportIIDDashboard {
 			modal.find('.sd-modal-header-controls').hide();
 			modal.find('#sd-modal-count').hide();
 			modal.find('#sd-modal-back').show();
+			modal.find('#sd-open-in-frappe').show();
 			modal.find('#sd-modal-title-text').text(doc.beneficiary_name || 'Case Detail');
 			modal.find('#sd-list-view').hide();
 			modal.find('#sd-detail-view').html(self.build_case_detail_html(doc)).show();
@@ -881,6 +883,7 @@ class SupportIIDDashboard {
 					<div class="sd-modal-header">
 						<div class="sd-modal-header-left">
 							<button class="btn btn-default btn-sm" id="sd-modal-back" style="display:none" data-tooltip="Back to list">${icon('chevronLeft', 13)} Back to list</button>
+							<button class="btn btn-primary btn-sm" id="sd-open-in-frappe" style="display:none" data-tooltip="Open this case in the Case Register form">Open in Frappe ↗</button>
 							<div class="sd-modal-title" id="sd-modal-title-text"></div>
 							<span id="sd-modal-count" class="sd-modal-count"></span>
 						</div>
@@ -941,17 +944,25 @@ class SupportIIDDashboard {
 			// Export uses ALL matching rows (all pages) — not just the current page.
 			var all_names = get_visible_rows().map((c) => c.name);
 			if (!all_names.length) { frappe.show_alert({ message: 'No cases to export.', indicator: 'orange' }); return; }
-			var params = { file_format: file_format, names: JSON.stringify(all_names) };
-			var url = frappe.urllib.get_full_url('/api/method/support_iid.api.dashboard.export_case_list?' + $.param(params));
-			var win = window.open(url, '_blank');
-			if (!win) {
-				frappe.msgprint('Your browser blocked the export pop-up. Please allow pop-ups for this site, then try again.');
-			}
-			modal.find('#sd-export-group').removeClass('open');
+			// POST, not a GET URL: thousands of case IDs don't fit in a URL.
+			var form = $('<form method="POST" target="_blank" style="display:none"></form>')
+				.attr('action', '/api/method/support_iid.api.dashboard.export_case_list');
+			var fields = { file_format: file_format, names: JSON.stringify(all_names), csrf_token: frappe.csrf_token };
+			Object.keys(fields).forEach(function (key) {
+				$('<input type="hidden">').attr('name', key).val(fields[key]).appendTo(form);
+			});
+			form.appendTo('body');
+			form[0].submit();
+			form.remove();
+			frappe.show_alert({ message: 'Exporting ' + all_names.length + ' case(s)…', indicator: 'blue' });
+			modal.find('.sd-export-group').removeClass('open');
 		}
 		modal.on('click', '#sd-export-toggle', function (e) {
 			e.stopPropagation();
 			modal.find('.sd-export-group').toggleClass('open');
+		});
+		modal.on('click', '#sd-open-in-frappe', function () {
+			if (current_detail_doc) window.open(frappe.utils.get_form_link('Case Register', current_detail_doc.name), '_blank');
 		});
 		modal.on('click', '#sd-export-excel', function () { trigger_export('excel'); });
 		modal.on('click', '#sd-export-pdf', function () { trigger_export('pdf'); });
