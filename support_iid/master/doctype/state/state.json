@@ -2,38 +2,20 @@
  "actions": [],
  "allow_import": 1,
  "allow_rename": 1,
- "autoname": "field:state_name",
+ "autoname": "prompt",
  "creation": "2026-10-05 10:00:00.000000",
  "doctype": "DocType",
  "engine": "InnoDB",
- "field_order": [
-  "state_name",
-  "state_code"
- ],
- "fields": [
-  {
-   "fieldname": "state_name",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "State Name",
-   "reqd": 1,
-   "unique": 1
-  },
-  {
-   "fieldname": "state_code",
-   "fieldtype": "Data",
-   "in_list_view": 1,
-   "label": "State Code"
-  }
- ],
+ "field_order": [],
+ "fields": [],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-05 10:00:00.000000",
+ "modified": "2026-10-08 18:00:00.000000",
  "modified_by": "Administrator",
  "module": "Master",
  "name": "State",
- "naming_rule": "By fieldname",
+ "naming_rule": "Set by user",
  "owner": "Administrator",
  "permissions": [
   {
@@ -78,8 +60,7 @@
   }
  ],
  "row_format": "Dynamic",
- "search_fields": "state_code",
- "sort_field": "state_name",
+ "sort_field": "name",
  "sort_order": "ASC",
  "states": [],
  "track_changes": 1

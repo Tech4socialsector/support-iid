@@ -92,10 +92,8 @@ def is_provisionally_approved(doc):
 
 
 def _district_label(value):
-	"""District record names are "<District> - <State>"; show just the district."""
-	if not value:
-		return ""
-	return frappe.db.get_value("District", value, "district_name") or value.rsplit(" - ", 1)[0]
+	"""District records are named after the district itself."""
+	return value or ""
 
 
 def _missing_full_details(doc):

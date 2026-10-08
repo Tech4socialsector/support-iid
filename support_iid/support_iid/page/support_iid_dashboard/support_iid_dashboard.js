@@ -1433,7 +1433,7 @@ class SupportIIDDashboard {
 							${row('Mobile Number', doc.mobile_number)}
 							${row('Location', doc.location)}
 							${row('State', doc.state)}
-							${row('District', doc.district ? doc.district.replace(/ - [^-]+$/, '') : '')}
+							${row('District', doc.district)}
 							${row('Funds Requested', doc.funds_requested ? format_currency(doc.funds_requested) : '')}
 							${row('Note about the individual', doc.note_about_the_individual, true)}
 						</div>

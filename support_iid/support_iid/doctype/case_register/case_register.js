@@ -269,10 +269,13 @@ frappe.ui.form.on("Case Register", {
 	},
 
 	state(frm) {
-		// District names are "<District> - <State>"; drop one from another state.
-		if (frm.doc.district && !frm.doc.district.endsWith(" - " + frm.doc.state)) {
-			frm.set_value("district", "");
-		}
+		// Drop a district that belongs to another state.
+		if (!frm.doc.district) return;
+		if (!frm.doc.state) return frm.set_value("district", "");
+		frappe.db.get_value("District", frm.doc.district, "state").then(function (r) {
+			var district_state = r && r.message && r.message.state;
+			if (district_state && district_state !== frm.doc.state) frm.set_value("district", "");
+		});
 	},
 
 	district(frm) {
