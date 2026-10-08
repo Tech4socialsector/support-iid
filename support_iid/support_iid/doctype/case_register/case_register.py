@@ -3360,7 +3360,7 @@ def resubmit_case_from_desk(case_name, comments=None):
 	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def resolve_registry_link(token):
 	payload = read_registry_link_token(token)
 	if not payload:
@@ -3369,6 +3369,15 @@ def resolve_registry_link(token):
 	case_name = payload.get("case_name")
 	if not frappe.db.exists("Case Register", case_name):
 		frappe.throw("This case no longer exists.")
+
+	# The "View Case" email button is usually opened while logged out — send
+	# them to login and back to the case, instead of a bare 403.
+	if frappe.session.user == "Guest":
+		from urllib.parse import quote
+
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/login?redirect-to=" + quote(f"/desk/case-register/{case_name}")
+		return
 
 	doc = frappe.get_doc("Case Register", case_name)
 	if not doc.has_permission("read"):

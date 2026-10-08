@@ -545,13 +545,19 @@ function case_register_is_provisionally_approved(frm) {
 	});
 }
 
+// Every stage approved while the case is still Pending Approval is exactly the
+// "Full Details Pending" state (the final round and additional requests always
+// have a stage awaiting). Deliberately not read from current_approval_level:
+// it's a permlevel-1 field, so a requester without level-1 read never gets it.
 function case_register_awaiting_full_details(frm) {
-	return (
-		!frm.is_new() &&
-		frm.doc.case_status === "Pending Approval" &&
-		frm.doc.current_approval_level === CASE_APPROVAL_LEVEL_FULL_DETAILS &&
-		case_register_is_provisionally_approved(frm)
-	);
+	var stages = frm.doc.case_approval_stage || [];
+	if (frm.is_new() || frm.doc.case_status !== "Pending Approval" || !stages.length) return false;
+	if (frm.doc.current_approval_level) {
+		return frm.doc.current_approval_level === CASE_APPROVAL_LEVEL_FULL_DETAILS;
+	}
+	return stages.every(function (s) {
+		return (s.case_approval_status || "").trim() === "Approve";
+	});
 }
 
 function apply_full_details_visibility(frm) {
