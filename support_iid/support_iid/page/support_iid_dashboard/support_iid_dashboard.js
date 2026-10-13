@@ -146,7 +146,6 @@ function get_current_stage(doc) {
 	return null;
 }
 
-const INDIA_LOCATION_URL = 'https://raw.githubusercontent.com/sab99r/Indian-States-And-Districts/master/states-and-districts.json';
 
 class SupportIIDDashboard {
 	constructor(page) {
@@ -155,7 +154,7 @@ class SupportIIDDashboard {
 		this.rows = [];
 		this.show_full_amounts = true;
 		try { this.show_full_amounts = localStorage.getItem('sd_show_full_amounts') !== '0'; } catch (e) { /* storage blocked */ }
-		this.india_locations = null; // { states: [{state, districts}] } once loaded
+		this.district_state = {}; // District name -> its State, from the District master
 
 		this.inject_styles();
 		this.render_shell();
@@ -588,29 +587,38 @@ class SupportIIDDashboard {
 		this.upto_control.$input.on('change', () => self.apply_filters());
 	}
 
+	// State / District filters come from the State and District masters
+	// (District has a State link), so they always match Case Register values.
 	load_location_data() {
 		var self = this;
-		fetch(INDIA_LOCATION_URL)
-			.then((r) => r.json())
-			.then((data) => {
-				var states = (data && data.states) || [];
-				if (!states.length) return;
-				self.india_locations = states;
+		Promise.all([
+			frappe.db.get_list('State', { fields: ['name'], order_by: 'name asc', limit: 0 }),
+			frappe.db.get_list('District', { fields: ['name', 'state'], order_by: 'name asc', limit: 0 }),
+		]).then(([states, districts]) => {
+			self.district_state = {};
+			(districts || []).forEach((d) => { self.district_state[d.name] = d.state; });
 
-				var stateSel = self.wrapper.find('#sd-f-state');
-				states.slice().sort((a, b) => (a.state || '').localeCompare(b.state || '')).forEach((s) => {
-					stateSel.append(`<option value="${frappe.utils.escape_html(s.state)}">${frappe.utils.escape_html(s.state)}</option>`);
-				});
+			var stateSel = self.wrapper.find('#sd-f-state');
+			(states || []).forEach((s) => {
+				stateSel.append(`<option value="${frappe.utils.escape_html(s.name)}">${frappe.utils.escape_html(s.name)}</option>`);
+			});
+			self.render_district_options();
+		}).catch(() => { /* no read access — filters stay at "All" */ });
+	}
 
-				var allDistricts = [];
-				states.forEach((s) => { allDistricts = allDistricts.concat(s.districts || []); });
-				allDistricts = Array.from(new Set(allDistricts)).sort();
-				var districtSel = self.wrapper.find('#sd-f-district');
-				allDistricts.forEach((d) => {
-					districtSel.append(`<option value="${frappe.utils.escape_html(d)}">${frappe.utils.escape_html(d)}</option>`);
-				});
-			})
-			.catch(() => { /* offline/blocked — filters remain functional via "All" only */ });
+	// Districts of the selected State only (all districts when no State is chosen).
+	render_district_options() {
+		var state = this.wrapper.find('#sd-f-state').val();
+		var districtSel = this.wrapper.find('#sd-f-district');
+		var current = districtSel.val();
+		var map = this.district_state || {};
+		var names = Object.keys(map).filter((d) => !state || map[d] === state).sort();
+
+		districtSel.find('option:not(:first)').remove();
+		names.forEach((d) => {
+			districtSel.append(`<option value="${frappe.utils.escape_html(d)}">${frappe.utils.escape_html(d)}</option>`);
+		});
+		districtSel.val(names.indexOf(current) > -1 ? current : '');
 	}
 
 	bind_events() {
@@ -621,11 +629,25 @@ class SupportIIDDashboard {
 			try { localStorage.setItem('sd_show_full_amounts', this.checked ? '1' : '0'); } catch (e) { /* storage blocked */ }
 			self.render_metrics();
 		});
-		this.wrapper.on('change', '#sd-f-source, #sd-f-type, #sd-f-state, #sd-f-district', function () {
+		this.wrapper.on('change', '#sd-f-source, #sd-f-type', function () {
+			self.apply_filters();
+		});
+		this.wrapper.on('change', '#sd-f-state', function () {
+			self.render_district_options();
+			self.apply_filters();
+		});
+		this.wrapper.on('change', '#sd-f-district', function () {
+			// Picking a District fills in its State.
+			var state = (self.district_state || {})[$(this).val()];
+			if (state && self.wrapper.find('#sd-f-state').val() !== state) {
+				self.wrapper.find('#sd-f-state').val(state);
+				self.render_district_options();
+			}
 			self.apply_filters();
 		});
 		this.wrapper.on('click', '#sd-f-clear', function () {
 			self.wrapper.find('#sd-f-source, #sd-f-type, #sd-f-state, #sd-f-district').val('');
+			self.render_district_options();
 			self.from_control.set_value('');
 			self.upto_control.set_value('');
 			self.apply_filters();
@@ -656,8 +678,8 @@ class SupportIIDDashboard {
 		this.rows = (this.all_rows || []).filter((c) => {
 			if (source && c.source_of_request !== source) return false;
 			if (type && c.type_of_request !== type) return false;
-			if (district && (c.district || '').toLowerCase().indexOf(district) === -1) return false;
-			if (state && (c.state || '').toLowerCase().indexOf(state) === -1) return false;
+			if (district && (c.district || '').toLowerCase() !== district) return false;
+			if (state && (c.state || '').toLowerCase() !== state) return false;
 			if (from_date && c.request_date && c.request_date < from_date) return false;
 			if (upto && c.request_date && c.request_date > upto) return false;
 			return true;
