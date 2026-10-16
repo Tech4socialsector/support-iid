@@ -723,7 +723,6 @@ class SupportIIDDashboard {
 		];
 
 		var status_list = (this.case_statuses && this.case_statuses.length) ? this.case_statuses : [];
-		var other_rows = rows.filter((c) => status_list.indexOf(c.case_status) === -1);
 
 		// 'Final Verification' is covered by the final approver card below.
 		var hidden_statuses = ['Closed', 'Withdrawn by the Requester', 'On Hold', 'Sent Back', 'Pending Approval', 'Final Verification', 'Rejected'];
@@ -752,11 +751,7 @@ class SupportIIDDashboard {
 				sub: s === 'Approved' ? status_rows.length + ' approved/closed case(s)' : status_rows.length + ' case(s)',
 				click: () => self.open_drilldown(s === 'Approved' ? 'Approved cases' : label + ' cases', matches_status, preset)
 			};
-		})).concat(other_rows.length ? [{
-			tone: 'gray', icon: icon('tag', 18), label: 'Others', value: other_rows.length,
-			sub: other_rows.length + ' case(s)',
-			click: () => self.open_drilldown('Other cases', (c) => status_list.indexOf(c.case_status) === -1, 'status_no_approval')
-		}] : []);
+		}));
 
 		this.render_metric_group('#sd-metrics-financial', financial_cards);
 		this.render_metric_group('#sd-metrics-status', status_cards);
