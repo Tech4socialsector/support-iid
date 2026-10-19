@@ -1432,6 +1432,13 @@ def has_permission(doc, ptype=None, user=None, debug=False):
 		if doc.is_new() or (doc.get("requestor_email") or "").strip().lower() == email:
 			return True
 
+		# On other people's cases an approver only views — they act through
+		# Approve / Send Back / Decline (process_case_approval saves with
+		# ignore_permissions), never by editing the case itself. This also
+		# covers approvers who are only informed (CC / For Information).
+		if ptype in ("write", "delete", "submit", "cancel", "amend"):
+			return False
+
 		def is_pending(stage):
 			return (stage.get("case_approval_status") or "").strip() in ("", "Awaiting For Approval")
 
