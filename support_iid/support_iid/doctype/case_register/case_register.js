@@ -514,6 +514,8 @@ const _CASE_REGISTER_FULL_DETAIL_FIELDS = [
 	"treatment",
 	"reviewer_case_diagnosis",
 	"amount_already_spent",
+	"additional_amount_required",
+	"reason_for_additional_amount",
 	"annual_family_income",
 	"residence_type",
 	"insurance_type",

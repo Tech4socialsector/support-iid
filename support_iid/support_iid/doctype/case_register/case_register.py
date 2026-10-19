@@ -53,6 +53,8 @@ FULL_DETAIL_FIELDS = (
 	"treatment",
 	"reviewer_case_diagnosis",
 	"amount_already_spent",
+	"additional_amount_required",
+	"reason_for_additional_amount",
 	"annual_family_income",
 	"residence_type",
 	"insurance_type",
@@ -221,6 +223,59 @@ def _reviewer_approved_this_round(doc):
 		if (log.action or "") == "Additional Support Requested":
 			start = idx + 1
 	return any((log.action or "") == "Reviewer Approve" for log in logs[start:])
+
+
+def _final_round_stage_for_additional_amount(doc):
+	"""
+	When the requester entered an Additional Amount Required in the full
+	details, the final approval goes to the approver for the new total (the
+	level that total falls in) instead of the last provisional approver; every
+	earlier approver is CC'd. Returns (concerned_stage, cc_emails), or None
+	when there's no additional amount or the total stays with the same
+	approver.
+	"""
+	additional = float(doc.get("additional_amount_required") or 0)
+	if additional <= 0:
+		return None
+	from support_iid.api.microsoft_graph import build_approval_stages
+
+	needed = build_approval_stages(doc.requestor_email, _approved_funds_total(doc) + additional)
+	if not needed:
+		return None
+	concerned = needed[-1]
+	concerned_email = (concerned.get("approver_email") or "").strip().lower()
+	stages = doc.get("case_approval_stage") or []
+	approved = [s for s in stages if (s.case_approval_status or "").strip() == "Approve"]
+	if approved and (approved[-1].approver_email or "").strip().lower() == concerned_email:
+		return None
+	cc = []
+	for s in list(needed[:-1]) + list(stages):
+		email = (s.get("approver_email") or "").strip().lower()
+		if email and email != concerned_email and email not in cc:
+			cc.append(email)
+	return concerned, cc
+
+
+def _apply_additional_amount_on_final_approval(doc):
+	"""
+	On final approval, an Additional Amount Required becomes part of the
+	approved request: the provisional request moves to the Previous Requests
+	history and the additional amount becomes the latest request, with the
+	total in Total Funds Requested.
+	"""
+	additional = float(doc.get("additional_amount_required") or 0)
+	if additional <= 0:
+		return
+	total = _approved_funds_total(doc) + additional
+	doc.append("additional_support_requests", _current_request_as_history_row(doc, ADDITIONAL_STATUS_APPROVED))
+	doc.request_date = today()
+	doc.funds_requested = additional
+	doc.purpose_of_additional_support = doc.reason_for_additional_amount or "Additional amount"
+	doc.additional_support_document = None
+	doc.total_funds_requested = total
+	doc.current_request_status = ADDITIONAL_STATUS_APPROVED
+	doc.additional_amount_required = 0
+	doc.reason_for_additional_amount = ""
 
 
 def _close_additional_request(doc, outcome):
@@ -824,7 +879,7 @@ def _resolve_attachment_fids(attachments, subject):
 	return resolved
 
 
-def _send_plain_email(recipients, subject, lines, attachments=None):
+def _send_plain_email(recipients, subject, lines, attachments=None, cc=None):
 	recipients = _filter_valid_recipients(recipients, subject)
 	if not recipients:
 		frappe.log_error(
@@ -840,6 +895,7 @@ def _send_plain_email(recipients, subject, lines, attachments=None):
 		message=_build_email_html(lines),
 		attachments=_resolve_attachment_fids(attachments, subject),
 		inline_images=[logo] if logo else None,
+		cc=[c for c in (cc or []) if _looks_like_email(c) and c not in recipients] or None,
 		now=True,
 	)
 
@@ -1800,6 +1856,7 @@ class CaseRegister(Document):
 		previous_action=None,
 		previous_comments=None,
 		previous_approver_name=None,
+		cc=None,
 	):
 		stages = self.get("case_approval_stage") or []
 		if stage_idx >= len(stages):
@@ -1870,6 +1927,7 @@ class CaseRegister(Document):
 				subject=subject,
 				lines=lines,
 				attachments=attachments,
+				cc=cc,
 			)
 			frappe.logger().info(
 				f"[SupportIID] Approval email → {approver_email} ({level_label}) for {self.name}"
@@ -2217,6 +2275,11 @@ class CaseRegister(Document):
 			)
 
 		elif show_full_details:
+			extra = float(fget("additional_amount_required") or 0)
+			if extra:
+				lines.append(f"**Additional Amount Required:** {inr(extra)}")
+				lines.append(f"**Total Funds Requested (incl. additional):** =={inr(_approved_funds_total(self) + extra)}==")
+				lines.append(f"**Reason for Additional Amount:** {text('reason_for_additional_amount')}")
 			annual_income = float(fget("annual_family_income") or 0)
 			insurance = fget("insurance_type") or "-"
 			if fget("insurance_coverage_details"):
@@ -2408,6 +2471,7 @@ def process_case_approval(
 
 		else:
 			if _reviewer_approved_this_round(doc):
+				_apply_additional_amount_on_final_approval(doc)
 				doc.case_status = CASE_STATUS_APPROVED
 				doc.current_approval_level = ""
 				if not doc.approved_date:
@@ -2769,15 +2833,36 @@ def reviewer_final_approval(case_name, action, comments=None):
 	)
 
 	if action == "Approve":
+		cc = None
+		final_stage = _final_round_stage_for_additional_amount(doc)
+		if final_stage:
+			# Additional amount entered in the full details: final approval goes to
+			# the approver for the new total, earlier approvers CC'd.
+			concerned, cc = final_stage
+			doc.append(
+				"case_approval_stage",
+				{
+					"case_approval_level_decription": concerned.get("case_approval_level_decription"),
+					"case_approval_status": "Awaiting For Approval",
+					"approver_name": concerned.get("approver_name") or "",
+					"approver_email": concerned.get("approver_email") or "",
+				},
+			)
+			stages = doc.get("case_approval_stage")
+			last_idx = len(stages) - 1
+			last_stage = stages[last_idx]
+		else:
+			last_stage.case_approval_status = "Awaiting For Approval"
 		last_level_label = last_stage.case_approval_level_decription or f"Level {last_idx + 1}"
-		last_stage.case_approval_status = "Awaiting For Approval"
 		doc.case_status = CASE_STATUS_PENDING
 		doc.current_approval_level = last_level_label
 		doc.save(ignore_permissions=True)
 		_safe_commit(case_name)
 
-		# Back to the same last-level approver for the real, final round.
+		# The final round: the same last-level approver, or the approver for the
+		# new total when an additional amount was entered.
 		doc._send_approval_request_email(
+			cc=cc,
 			stage_idx=last_idx,
 			case_pdf_path=doc.case_document or None,
 			include_supporting_docs=True,
@@ -2857,6 +2942,9 @@ def submit_full_details(case_name):
 		and is_provisionally_approved(doc)
 	):
 		frappe.throw("This case is not awaiting full details.")
+
+	if float(doc.additional_amount_required or 0) > 0 and not (doc.reason_for_additional_amount or "").strip():
+		frappe.throw("Please enter the Reason for Additional Amount.", title="Missing Details")
 
 	if not frappe.db.get_single_value("Support IID Settings", "disable_case_register_mandatory_fields"):
 		missing = _missing_full_details(doc)

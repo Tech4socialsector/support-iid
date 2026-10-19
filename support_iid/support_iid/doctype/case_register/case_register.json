@@ -39,6 +39,8 @@
   "column_break_eybn",
   "treatment",
   "amount_already_spent",
+  "additional_amount_required",
+  "reason_for_additional_amount",
   "reviewer_case_diagnosis",
   "financial_information_insurance_section",
   "annual_family_income",
@@ -549,12 +551,25 @@
   {
    "fieldname": "column_break_toml",
    "fieldtype": "Column Break"
+  },
+  {
+   "description": "Optional — if the treatment needs more funds than provisionally approved. The final approval then goes to the approver for the new total.",
+   "fieldname": "additional_amount_required",
+   "fieldtype": "Currency",
+   "label": "Additional Amount Required (if any)"
+  },
+  {
+   "depends_on": "eval:doc.additional_amount_required > 0",
+   "fieldname": "reason_for_additional_amount",
+   "fieldtype": "Small Text",
+   "label": "Reason for Additional Amount",
+   "mandatory_depends_on": "eval:doc.additional_amount_required > 0"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-08 15:00:00.000000",
+ "modified": "2026-10-19 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Support IID",
  "name": "Case Register",
