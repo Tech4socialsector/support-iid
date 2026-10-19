@@ -225,14 +225,14 @@ def _reviewer_approved_this_round(doc):
 	return any((log.action or "") == "Reviewer Approve" for log in logs[start:])
 
 
-def _final_round_stage_for_additional_amount(doc):
+def _final_round_stages_for_additional_amount(doc):
 	"""
 	When the requester entered an Additional Amount Required in the full
-	details, the final approval goes to the approver for the new total (the
-	level that total falls in) instead of the last provisional approver; every
-	earlier approver is CC'd. Returns (concerned_stage, cc_emails), or None
-	when there's no additional amount or the total stays with the same
-	approver.
+	details, the final approval goes step by step through the levels the new
+	total needs that haven't approved this case yet (e.g. ₹1L approved by L1,
+	+₹2L = ₹3L → L2 then L3), with the approvers who already approved CC'd.
+	Returns (new_stages, cc_emails), or None when there's no additional amount
+	or no new level is needed (the last approver then does the final round).
 	"""
 	additional = float(doc.get("additional_amount_required") or 0)
 	if additional <= 0:
@@ -242,18 +242,22 @@ def _final_round_stage_for_additional_amount(doc):
 	needed = build_approval_stages(doc.requestor_email, _approved_funds_total(doc) + additional)
 	if not needed:
 		return None
-	concerned = needed[-1]
-	concerned_email = (concerned.get("approver_email") or "").strip().lower()
 	stages = doc.get("case_approval_stage") or []
-	approved = [s for s in stages if (s.case_approval_status or "").strip() == "Approve"]
-	if approved and (approved[-1].approver_email or "").strip().lower() == concerned_email:
+	approved_levels = {
+		(s.case_approval_level_decription or "").strip()
+		for s in stages
+		if (s.case_approval_status or "").strip() == "Approve"
+	}
+	new_stages = [s for s in needed if (s.get("case_approval_level_decription") or "").strip() not in approved_levels]
+	if not new_stages:
 		return None
+	acting = {(s.get("approver_email") or "").strip().lower() for s in new_stages}
 	cc = []
-	for s in list(needed[:-1]) + list(stages):
+	for s in stages:
 		email = (s.get("approver_email") or "").strip().lower()
-		if email and email != concerned_email and email not in cc:
+		if email and email not in acting and email not in cc:
 			cc.append(email)
-	return concerned, cc
+	return new_stages, cc
 
 
 def _apply_additional_amount_on_final_approval(doc):
@@ -1927,11 +1931,31 @@ class CaseRegister(Document):
 				subject=subject,
 				lines=lines,
 				attachments=attachments,
-				cc=cc,
 			)
 			frappe.logger().info(
 				f"[SupportIID] Approval email → {approver_email} ({level_label}) for {self.name}"
 			)
+			# CC'd approvers get their own copy without the action button —
+			# only the approver above can act on this step.
+			cc_recipients = [
+				c for c in (cc or []) if c and c.strip().lower() != approver_email.strip().lower()
+			]
+			if cc_recipients:
+				_send_plain_email(
+					recipients=cc_recipients,
+					subject=f"For Information - [{self.name}] - {req_name} ({level_label} approval in progress)",
+					lines=self._build_approval_email_lines(
+						approver_name=approver_name,
+						level_label=level_label,
+						webform_url=webform_url,
+						registry_url=registry_url,
+						previous_action=previous_action,
+						previous_comments=previous_comments,
+						previous_approver_name=previous_approver_name,
+						info_only=True,
+					),
+					attachments=attachments,
+				)
 		except Exception:
 			frappe.log_error(
 				frappe.get_traceback(),
@@ -2180,6 +2204,7 @@ class CaseRegister(Document):
 		previous_action=None,
 		previous_comments=None,
 		previous_approver_name=None,
+		info_only=False,
 	):
 		"""
 		Approver email body. What it shows depends on the stage:
@@ -2214,14 +2239,26 @@ class CaseRegister(Document):
 			+ f" on behalf of {ben_name}."
 		)
 
-		lines = [
-			f"Dear {approver_name},",
-			"",
-			f"A support request requires your review as part of the Support IID {level_label} approval.",
-			"",
-			intro_sentence,
-			"",
-		]
+		if info_only:
+			# Copy for the approvers on CC — information only, no action needed.
+			lines = [
+				"Dear Approver,",
+				"",
+				f"For your information — this case is now with **{approver_name}** for the "
+				f"Support IID {level_label} approval. No action is needed from you.",
+				"",
+				intro_sentence,
+				"",
+			]
+		else:
+			lines = [
+				f"Dear {approver_name},",
+				"",
+				f"A support request requires your review as part of the Support IID {level_label} approval.",
+				"",
+				intro_sentence,
+				"",
+			]
 
 		if previous_action:
 			prev_stage_label = (
@@ -2310,9 +2347,10 @@ class CaseRegister(Document):
 		lines.append(
 			"The case summary and all supporting documents are attached for your reference."
 		)
-		lines.append("Please review the request and record your decision using the button below:")
-		lines.append("")
-		lines.append(f"[[For Your Action — Approve / Send Back / Decline]]({webform_url})")
+		if not info_only:
+			lines.append("Please review the request and record your decision using the button below:")
+			lines.append("")
+			lines.append(f"[[For Your Action — Approve / Send Back / Decline]]({webform_url})")
 		lines.append("")
 		lines.append(f"[[View Case]]({registry_url})")
 		lines.append("")
@@ -2453,8 +2491,20 @@ def process_case_approval(
 			doc.save(ignore_permissions=True)
 			_safe_commit(case_name)
 
+			# Final round for an additional amount: the levels below that already
+			# approved stay CC'd on every step.
+			cc = None
+			if float(doc.get("additional_amount_required") or 0) > 0 and _reviewer_approved_this_round(doc):
+				next_email = (next_stage.approver_email or "").strip().lower()
+				cc = []
+				for s in stages:
+					email = (s.approver_email or "").strip().lower()
+					if (s.case_approval_status or "").strip() == "Approve" and email and email != next_email and email not in cc:
+						cc.append(email)
+
 			# Email the next approver
 			doc._send_approval_request_email(
+				cc=cc,
 				stage_idx=current_idx + 1,
 				case_pdf_path=doc.case_document or None,
 				include_supporting_docs=True,
@@ -2834,22 +2884,25 @@ def reviewer_final_approval(case_name, action, comments=None):
 
 	if action == "Approve":
 		cc = None
-		final_stage = _final_round_stage_for_additional_amount(doc)
-		if final_stage:
-			# Additional amount entered in the full details: final approval goes to
-			# the approver for the new total, earlier approvers CC'd.
-			concerned, cc = final_stage
-			doc.append(
-				"case_approval_stage",
-				{
-					"case_approval_level_decription": concerned.get("case_approval_level_decription"),
-					"case_approval_status": "Awaiting For Approval",
-					"approver_name": concerned.get("approver_name") or "",
-					"approver_email": concerned.get("approver_email") or "",
-				},
-			)
+		final_stages = _final_round_stages_for_additional_amount(doc)
+		if final_stages:
+			# Additional amount entered in the full details: the final approval
+			# goes step by step through the new levels the total needs; the
+			# approvers who already approved are CC'd.
+			new_stages, cc = final_stages
+			first_new_idx = len(stages)
+			for i, s in enumerate(new_stages):
+				doc.append(
+					"case_approval_stage",
+					{
+						"case_approval_level_decription": s.get("case_approval_level_decription"),
+						"case_approval_status": "Awaiting For Approval" if i == 0 else "",
+						"approver_name": s.get("approver_name") or "",
+						"approver_email": s.get("approver_email") or "",
+					},
+				)
 			stages = doc.get("case_approval_stage")
-			last_idx = len(stages) - 1
+			last_idx = first_new_idx
 			last_stage = stages[last_idx]
 		else:
 			last_stage.case_approval_status = "Awaiting For Approval"
@@ -2859,8 +2912,8 @@ def reviewer_final_approval(case_name, action, comments=None):
 		doc.save(ignore_permissions=True)
 		_safe_commit(case_name)
 
-		# The final round: the same last-level approver, or the approver for the
-		# new total when an additional amount was entered.
+		# The final round: the same last-level approver, or (additional amount)
+		# the first of the new levels — the rest follow one after another.
 		doc._send_approval_request_email(
 			cc=cc,
 			stage_idx=last_idx,
