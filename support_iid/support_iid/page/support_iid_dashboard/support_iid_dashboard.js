@@ -728,6 +728,27 @@ class SupportIIDDashboard {
 		var hidden_statuses = ['Closed', 'Withdrawn by the Requester', 'On Hold', 'Sent Back', 'Pending Approval', 'Final Verification', 'Rejected'];
 		var displayed_statuses = status_list.filter((s) => hidden_statuses.indexOf(s) === -1);
 
+		// Returning beneficiaries: same mobile (last 10 digits) + same name = same
+		// person (the rule the Case Register form uses); people with 2+ cases.
+		var person_key = (c) => {
+			var mobile = String(c.mobile_number || '').replace(/\D/g, '').slice(-10);
+			var name = String(c.beneficiary_name || '').toLowerCase().split(/\s+/).filter(Boolean).join(' ');
+			return mobile.length === 10 && name ? mobile + '|' + name : null;
+		};
+		var cases_by_person = {};
+		rows.forEach((c) => {
+			var key = person_key(c);
+			if (key) (cases_by_person[key] = cases_by_person[key] || []).push(c.name);
+		});
+		var returning_cases = new Set();
+		var returning_people = 0;
+		Object.values(cases_by_person).forEach((names) => {
+			if (names.length > 1) {
+				returning_people += 1;
+				names.forEach((n) => returning_cases.add(n));
+			}
+		});
+
 		var status_cards = [
 			{
 				tone: 'amber', icon: icon('clock', 18), label: 'Cases In Progress · Provisional Approval', value: provisional_rows.length,
@@ -738,6 +759,11 @@ class SupportIIDDashboard {
 				tone: 'blue', icon: icon('clock', 18), label: 'Cases In Progress · Final Approval', value: final_rows.length,
 				sub: 'awaiting reviewer or final approval',
 				click: () => self.open_drilldown('Cases in progress · final approval', is_pending_final, 'status_no_approval')
+			},
+			{
+				tone: 'purple', icon: icon('tag', 18), label: 'Returning Beneficiaries', value: returning_people,
+				sub: returning_cases.size + ' case(s) from people who requested more than once',
+				click: () => self.open_drilldown('Returning beneficiaries — all their cases', (c) => returning_cases.has(c.name), 'status_no_approval')
 			}
 		].concat(displayed_statuses.map((s) => {
 			var matches_status = s === 'Approved'

@@ -22,6 +22,7 @@ ACTION_LABEL = {
 	"Reviewer Approve": "Verified",
 	"Reviewer Send Back": "Sent Back for Revision (Final Verification)",
 	"Additional Support Requested": "Additional support requested",
+	"Reviewer Verified": "Verified by the Support IID Reviewer",
 }
 
 CASE_STATUS_DRAFT = "Draft"
@@ -151,6 +152,7 @@ HISTORY_SNAPSHOT_FIELDS = (
 	"request_date",
 	"type_of_request",
 	"funds_requested",
+	"additional_amount_required",
 	"beneficiary_name",
 	"age",
 	"gender",
@@ -225,61 +227,59 @@ def _reviewer_approved_this_round(doc):
 	return any((log.action or "") == "Reviewer Approve" for log in logs[start:])
 
 
+def _concerned_approver_for_total(doc, total):
+	"""
+	The approver for the level a total falls in, plus everyone else who is
+	only informed (lower levels and every approver already on the case).
+	Returns (concerned_stage, info_emails) or None if no approver is found.
+	"""
+	from support_iid.api.microsoft_graph import build_approval_stages
+
+	needed = build_approval_stages(doc.requestor_email, total)
+	if not needed:
+		return None
+	concerned = needed[-1]
+	concerned_email = (concerned.get("approver_email") or "").strip().lower()
+	info = []
+	for s in list(needed[:-1]) + list(doc.get("case_approval_stage") or []):
+		email = (s.get("approver_email") or "").strip().lower()
+		if email and email != concerned_email and email not in info:
+			info.append(email)
+	return concerned, info
+
+
 def _final_round_stages_for_additional_amount(doc):
 	"""
 	When the requester entered an Additional Amount Required in the full
-	details, the final approval goes step by step through the levels the new
-	total needs that haven't approved this case yet (e.g. ₹1L approved by L1,
-	+₹2L = ₹3L → L2 then L3), with the approvers who already approved CC'd.
-	Returns (new_stages, cc_emails), or None when there's no additional amount
-	or no new level is needed (the last approver then does the final round).
+	details, the final approval (after the Reviewer) goes to one approver only
+	— the one for the level the new total falls in (e.g. ₹1L approved by L1,
+	+₹5L = ₹6L → L4); the other approvers get the "For Information" email.
+	Returns ([concerned_stage], info_emails), or None when there's no
+	additional amount or the last approver is already the concerned one.
 	"""
 	additional = float(doc.get("additional_amount_required") or 0)
 	if additional <= 0:
 		return None
-	from support_iid.api.microsoft_graph import build_approval_stages
-
-	needed = build_approval_stages(doc.requestor_email, _approved_funds_total(doc) + additional)
-	if not needed:
+	found = _concerned_approver_for_total(doc, _approved_funds_total(doc) + additional)
+	if not found:
 		return None
-	stages = doc.get("case_approval_stage") or []
-	approved_levels = {
-		(s.case_approval_level_decription or "").strip()
-		for s in stages
-		if (s.case_approval_status or "").strip() == "Approve"
-	}
-	new_stages = [s for s in needed if (s.get("case_approval_level_decription") or "").strip() not in approved_levels]
-	if not new_stages:
+	concerned, info = found
+	approved = [s for s in (doc.get("case_approval_stage") or []) if (s.case_approval_status or "").strip() == "Approve"]
+	if approved and (approved[-1].approver_email or "").strip().lower() == (
+		(concerned.get("approver_email") or "").strip().lower()
+	):
 		return None
-	acting = {(s.get("approver_email") or "").strip().lower() for s in new_stages}
-	cc = []
-	for s in stages:
-		email = (s.get("approver_email") or "").strip().lower()
-		if email and email not in acting and email not in cc:
-			cc.append(email)
-	return new_stages, cc
+	return [concerned], info
 
 
 def _apply_additional_amount_on_final_approval(doc):
 	"""
-	On final approval, an Additional Amount Required becomes part of the
-	approved request: the provisional request moves to the Previous Requests
-	history and the additional amount becomes the latest request, with the
-	total in Total Funds Requested.
+	The Additional Amount Required entered in the full details stays on the
+	case as entered (read-only) after final approval — Funds Requested keeps
+	the first amount and Total Funds Requested (recalculated on save) shows
+	the sum. Nothing to move.
 	"""
-	additional = float(doc.get("additional_amount_required") or 0)
-	if additional <= 0:
-		return
-	total = _approved_funds_total(doc) + additional
-	doc.append("additional_support_requests", _current_request_as_history_row(doc, ADDITIONAL_STATUS_APPROVED))
-	doc.request_date = today()
-	doc.funds_requested = additional
-	doc.purpose_of_additional_support = doc.reason_for_additional_amount or "Additional amount"
-	doc.additional_support_document = None
-	doc.total_funds_requested = total
-	doc.current_request_status = ADDITIONAL_STATUS_APPROVED
-	doc.additional_amount_required = 0
-	doc.reason_for_additional_amount = ""
+	return
 
 
 def _close_additional_request(doc, outcome):
@@ -1497,8 +1497,15 @@ class CaseRegister(Document):
 		self._validate_mobile_fields()
 		self._validate_currency_fields()
 		self._validate_name_fields()
+		self._set_total_funds_requested()
 		self._validate_state_district()
 		self._validate_mandatory_documents()
+
+	def _set_total_funds_requested(self):
+		# Read-only, the single total field: approved requests so far (Funds
+		# Requested + approved Previous Requests) + any Additional Amount Required.
+		additional = float(self.get("additional_amount_required") or 0)
+		self.total_funds_requested = _approved_funds_total(self) + additional
 
 	def _validate_state_district(self):
 		if self.flags.ignore_format_validation or not self.get("district"):
@@ -2300,6 +2307,17 @@ class CaseRegister(Document):
 		lines.append(f"**Type of Request:** {fget('type_of_request') or '-'}")
 		lines.append(f"**Note about the individual:** {text('note_about_the_individual')}")
 		lines.append(f"**Funds Requested:** {inr(fget('funds_requested'))}")
+		history = _beneficiary_history(fget("mobile_number"), fget("beneficiary_name"), fget("age"), exclude=self.name)
+		if history["same_person"]:
+			earlier = ", ".join(f"{c.name} ({case_status_display_label(c.case_status)})" for c in history["same_person"])
+			n = len(history["same_person"]) + 1
+			suffix = "th" if 10 <= n % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+			lines.append(f"**Returning beneficiary:** =={n}{suffix} request== — earlier: {earlier}")
+		if history["same_mobile_others"]:
+			others = ", ".join(
+				f"{_sanitize_untrusted_text(c.beneficiary_name or '')} ({c.name})" for c in history["same_mobile_others"]
+			)
+			lines.append(f"**Other beneficiaries with this mobile number:** {others}")
 
 		hospital = ", ".join(
 			filter(None, [fget("hospital_institution_name"), fget("hospital_institution_location")])
@@ -2795,6 +2813,48 @@ def _notify_reviewers_of_new_case(doc, case_pdf_path=None):
 		frappe.log_error(frappe.get_traceback(), f"Reviewer new-case notification failed — {doc.name}")
 
 
+def _notify_reviewers_of_additional_request(doc, amount, total, purpose):
+	reviewer_emails = frappe.get_all(
+		"Has Role", filters={"role": "Support IID Reviewer", "parenttype": "User"}, pluck="parent"
+	)
+	reviewer_emails = [e for e in reviewer_emails if e and e not in ("Administrator", "Guest")]
+	if not reviewer_emails:
+		return
+
+	case_url = f"{get_url()}/desk/case-register/{doc.name}"
+	lines = [
+		"Dear Support IID Reviewer,",
+		"",
+		f"An additional support request has been raised on Case {doc.name} and needs your "
+		f"verification before it goes to the approver.",
+		"",
+		f"**Beneficiary:** {doc.beneficiary_name or '-'}",
+		f"**Requestor:** {doc.requestor_name or '-'} ({doc.requestor_email or '-'})",
+		f"**Additional Amount Requested:** INR {int(amount):,}",
+		f"**Total Funds Requested (incl. this):** ==INR {int(total):,}==",
+		f"**Purpose:** {_sanitize_untrusted_text(purpose)}",
+		"",
+		f"[[For Your Action — Approve / Send Back]]({case_url})",
+		"",
+		"Regards,",
+	]
+	attachments = []
+	if doc.additional_support_document:
+		fid = doc._get_file_id_from_url(doc.additional_support_document)
+		if fid:
+			attachments.append({"fid": fid})
+
+	try:
+		_send_plain_email(
+			recipients=reviewer_emails,
+			subject=f"Additional Support - Verification Needed - [{doc.name}] - {doc.beneficiary_name or ''}",
+			lines=lines,
+			attachments=attachments,
+		)
+	except Exception:
+		frappe.log_error(frappe.get_traceback(), f"Reviewer additional-request notification failed — {doc.name}")
+
+
 def _notify_reviewers_of_provisional_approval(doc, approver_name, comments=None):
 	reviewer_emails = frappe.get_all(
 		"Has Role",
@@ -2889,13 +2949,50 @@ def reviewer_final_approval(case_name, action, comments=None):
 		},
 	)
 
-	if action == "Approve":
+	pending_idx = next(
+		(i for i, s in enumerate(stages) if (s.case_approval_status or "").strip() in ("", "Awaiting For Approval")),
+		None,
+	)
+	if action == "Approve" and _active_additional_request(doc) and pending_idx is not None:
+		# Additional Support Request: Reviewer first, then the one approver for
+		# the new total; the last approval marks the case Approved (no second
+		# round). Everyone else on the case gets the "For Information" email.
+		next_stage = stages[pending_idx]
+		next_stage.case_approval_status = "Awaiting For Approval"
+		next_email = (next_stage.approver_email or "").strip().lower()
+		# Lower levels for the new total plus everyone already on the case.
+		found = _concerned_approver_for_total(doc, float(doc.total_funds_requested or 0))
+		info = []
+		for email in list(found[1] if found else []) + [(s.approver_email or "") for s in stages]:
+			email = (email or "").strip().lower()
+			if email and email != next_email and email not in info:
+				info.append(email)
+		doc.case_status = CASE_STATUS_PENDING
+		doc.current_approval_level = next_stage.case_approval_level_decription or f"Level {pending_idx + 1}"
+		doc.save(ignore_permissions=True)
+		_safe_commit(case_name)
+		doc._send_approval_request_email(
+			cc=info,
+			stage_idx=pending_idx,
+			case_pdf_path=doc.case_document or None,
+			include_supporting_docs=True,
+			previous_action="Reviewer Verified",
+			previous_comments=comments,
+			previous_approver_name=reviewer_name,
+		)
+		doc._send_requestor_notification_email(
+			action="Approve",
+			comments=comments,
+			approver_name=reviewer_name,
+			next_level_label=doc.current_approval_level,
+		)
+	elif action == "Approve":
 		cc = None
 		final_stages = _final_round_stages_for_additional_amount(doc)
 		if final_stages:
 			# Additional amount entered in the full details: the final approval
-			# goes step by step through the new levels the total needs; the
-			# approvers who already approved are CC'd.
+			# goes to the one approver for the new total; the others get the
+			# "For Information" email.
 			new_stages, cc = final_stages
 			first_new_idx = len(stages)
 			for i, s in enumerate(new_stages):
@@ -2920,7 +3017,7 @@ def reviewer_final_approval(case_name, action, comments=None):
 		_safe_commit(case_name)
 
 		# The final round: the same last-level approver, or (additional amount)
-		# the first of the new levels — the rest follow one after another.
+		# the approver for the new total.
 		doc._send_approval_request_email(
 			cc=cc,
 			stage_idx=last_idx,
@@ -3089,19 +3186,16 @@ def request_additional_support(
 	if amount <= 0:
 		frappe.throw("Please enter the fund requested (estimate) as an amount greater than zero.")
 
-	total = _approved_funds_total(doc) + amount
+	# The Additional Amount Required entered in the full details is approved by
+	# now (the case is Approved) and stays on the form, so count it too.
+	total = _approved_funds_total(doc) + float(doc.additional_amount_required or 0) + amount
 	needed = build_approval_stages(doc.requestor_email, total)
 	if not needed:
 		frappe.throw("Could not find the approvers for this amount. Please check the Approval Hierarchy.")
 
-	approved_levels = {
-		(s.case_approval_level_decription or "").strip()
-		for s in (doc.get("case_approval_stage") or [])
-		if (s.case_approval_status or "").strip() == "Approve"
-	}
-	new_stages = [
-		s for s in needed if (s.get("case_approval_level_decription") or "").strip() not in approved_levels
-	] or [needed[-1]]
+	# Reviewer first, then only the approver for the level the new total
+	# falls in (others are informed when it reaches them).
+	new_stages = [needed[-1]]
 
 	# The approved request on the form moves down into history; the new
 	# request takes its place on the main form fields.
@@ -3128,7 +3222,8 @@ def request_additional_support(
 			"case_approval_stage",
 			{
 				"case_approval_level_decription": s.get("case_approval_level_decription"),
-				"case_approval_status": "Awaiting For Approval" if i == 0 else "",
+				# Not awaiting yet — the Reviewer verifies an additional request first.
+				"case_approval_status": "",
 				"approver_name": s.get("approver_name") or "",
 				"approver_email": s.get("approver_email") or "",
 			},
@@ -3145,8 +3240,8 @@ def request_additional_support(
 			"comments": f"INR {int(amount):,} (total INR {int(total):,}) — {purpose}",
 		},
 	)
-	doc.case_status = CASE_STATUS_PENDING
-	doc.current_approval_level = first_level
+	doc.case_status = CASE_STATUS_FINAL_VERIFICATION
+	doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
 	doc.save(ignore_permissions=True)
 	_safe_commit(case_name)
 
@@ -3163,13 +3258,7 @@ def request_additional_support(
 			)
 			_safe_commit(case_name)
 
-	doc._send_approval_request_email(
-		stage_idx=first_new_idx,
-		case_pdf_path=doc.case_document or None,
-		include_supporting_docs=True,
-		previous_action="Additional Support Requested",
-		previous_comments=purpose,
-	)
+	_notify_reviewers_of_additional_request(doc, amount, total, purpose)
 	_send_additional_request_outcome_email(doc, _active_additional_request(doc), ADDITIONAL_STATUS_PENDING)
 
 	return {"case_status": doc.case_status, "current_approval_level": doc.current_approval_level}
@@ -3186,7 +3275,7 @@ def _send_additional_request_outcome_email(doc, additional, outcome, comments=No
 		subject = f"Additional Support Requested - [{doc.name}] - {doc.beneficiary_name or ''}"
 		body = (
 			f"The additional support request of **{amount}** for {beneficiary} has been "
-			f"received and is now pending **{doc.current_approval_level}** approval."
+			"received and is now pending verification by the Support IID Reviewer."
 		)
 	elif outcome == ADDITIONAL_STATUS_DECLINED:
 		subject = f"Additional Support Declined - [{doc.name}] - {doc.beneficiary_name or ''}"
@@ -3378,7 +3467,8 @@ def _resubmit_after_send_back(doc, stage_idx, previous_action, previous_comments
 	sent_back_by_reviewer = bool(logs) and (logs[-1].action or "").strip() == "Reviewer Send Back"
 
 	if sent_back_by_reviewer:
-		stage.case_approval_status = "Approve"
+		# Additional request: its approver hasn't approved yet — reset, not Approve.
+		stage.case_approval_status = "" if _active_additional_request(doc) else "Approve"
 		doc.case_status = CASE_STATUS_FINAL_VERIFICATION
 		doc.current_approval_level = CASE_APPROVAL_LEVEL_REVIEWER
 		doc.save(ignore_permissions=True)
@@ -3593,3 +3683,102 @@ def bulk_set_case_status(names, case_status):
 
 	frappe.db.commit()
 	return {"updated": len(names)}
+
+
+# ── Returning beneficiary ─────────────────────────────────────────────────────
+
+
+def _normalize_mobile(value):
+	digits = re.sub(r"\D", "", str(value or ""))
+	return digits[-10:]
+
+
+def _normalize_name(value):
+	return " ".join(str(value or "").lower().split())
+
+
+def _beneficiary_history(mobile_number, beneficiary_name, age=None, exclude=None):
+	"""
+	Earlier cases for a beneficiary:
+	  same_person — same mobile (last 10 digits) and same name;
+	  same_mobile_others — same mobile, different name (e.g. a family member);
+	  possible_matches — different mobile, same name and age.
+	"""
+	mobile = _normalize_mobile(mobile_number)
+	name = _normalize_name(beneficiary_name)
+	out = {"same_person": [], "same_mobile_others": [], "possible_matches": []}
+	if len(mobile) < 10 and not name:
+		return out
+
+	fields = [
+		"name",
+		"beneficiary_name",
+		"mobile_number",
+		"age",
+		"request_date",
+		"type_of_request",
+		"ailment__course_details",
+		"treatment",
+		"hospital_institution_name",
+		"funds_requested",
+		"total_funds_requested",
+		"case_status",
+		"requestor_email",
+	]
+	candidates = {}
+	if len(mobile) == 10:
+		for c in frappe.get_all(
+			"Case Register",
+			filters={"mobile_number": ["like", f"%{mobile[-6:]}%"]},
+			fields=fields,
+			ignore_permissions=True,
+		):
+			candidates[c.name] = c
+	if name and age:
+		for c in frappe.get_all(
+			"Case Register",
+			filters={"beneficiary_name": ["like", beneficiary_name.strip()], "age": age},
+			fields=fields,
+			ignore_permissions=True,
+		):
+			candidates[c.name] = c
+
+	for c in sorted(candidates.values(), key=lambda c: str(c.request_date or "")):
+		if exclude and c.name == exclude:
+			continue
+		same_mobile = len(mobile) == 10 and _normalize_mobile(c.mobile_number) == mobile
+		same_name = bool(name) and _normalize_name(c.beneficiary_name) == name
+		if same_mobile and same_name:
+			out["same_person"].append(c)
+		elif same_mobile:
+			out["same_mobile_others"].append(c)
+		elif same_name and age and str(c.age or "") == str(age):
+			out["possible_matches"].append(c)
+	return out
+
+
+@frappe.whitelist()
+def get_beneficiary_history(mobile_number=None, beneficiary_name=None, age=None, exclude=None):
+	"""
+	For the Case Register form. Requester-only users see just the case number,
+	date and status of cases that aren't theirs — not medical or money details.
+	"""
+	history = _beneficiary_history(mobile_number, beneficiary_name, age, exclude)
+	limited_email = _requester_only_scope_email()
+	full = ("type_of_request", "ailment__course_details", "treatment", "hospital_institution_name",
+		"funds_requested", "total_funds_requested")
+
+	def view(c):
+		row = {
+			"name": c.name,
+			"beneficiary_name": c.beneficiary_name,
+			"request_date": c.request_date,
+			"case_status": case_status_display_label(c.case_status),
+		}
+		own = limited_email and (c.requestor_email or "").strip().lower() == limited_email.strip().lower()
+		if not limited_email or own:
+			row.update({f: c.get(f) for f in full})
+			row["can_open"] = True
+		return row
+
+	return {key: [view(c) for c in rows] for key, rows in history.items()}

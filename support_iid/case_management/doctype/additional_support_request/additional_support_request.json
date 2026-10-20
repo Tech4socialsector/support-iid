@@ -1,7 +1,7 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-09-25 10:00:00.000000",
+ "creation": "2026-09-25 10:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
@@ -11,6 +11,8 @@
   "type_of_request",
   "purpose_of_additional_support",
   "funds_requested",
+  "column_break_h1",
+  "additional_amount_required",
   "total_funds_requested",
   "status",
   "requested_by",
@@ -22,6 +24,7 @@
   "mobile_number",
   "location",
   "family_details",
+  "column_break_h2",
   "employment_status",
   "state",
   "district",
@@ -31,23 +34,27 @@
   "hospital_institution_name",
   "hospital_institution_location",
   "ailment__course_details",
+  "column_break_h3",
   "treatment",
   "reviewer_case_diagnosis",
   "amount_already_spent",
   "section_4",
   "annual_family_income",
   "residence_type",
+  "column_break_h4",
   "insurance_type",
   "insurance_coverage_details",
   "section_5",
   "physical_verification",
   "physical_verification_notes",
+  "column_break_h5",
   "vulnerability_assessment",
   "milaap_campaign_link",
   "section_6",
   "approved_date",
   "approved_amount",
   "date_of_transfer",
+  "column_break_h6",
   "utr_details",
   "refund_amount_if_any",
   "status_of_milaap_transfer"
@@ -59,6 +66,7 @@
    "label": "Request"
   },
   {
+   "columns": 2,
    "fieldname": "request_date",
    "fieldtype": "Date",
    "in_list_view": 1,
@@ -73,6 +81,7 @@
    "read_only": 1
   },
   {
+   "columns": 2,
    "fieldname": "purpose_of_additional_support",
    "fieldtype": "Small Text",
    "in_list_view": 1,
@@ -80,6 +89,7 @@
    "read_only": 1
   },
   {
+   "columns": 2,
    "fieldname": "funds_requested",
    "fieldtype": "Currency",
    "in_list_view": 1,
@@ -94,6 +104,7 @@
    "read_only": 1
   },
   {
+   "columns": 2,
    "fieldname": "status",
    "fieldtype": "Select",
    "in_list_view": 1,
@@ -197,7 +208,6 @@
   {
    "fieldname": "hospital_institution_name",
    "fieldtype": "Data",
-   "in_list_view": 1,
    "label": "Hospital / Institution Name",
    "read_only": 1
   },
@@ -334,13 +344,45 @@
    "label": "Status of Milaap transfer",
    "options": "\nPending\nPartially Disbursed\nFully Disbursed",
    "read_only": 1
+  },
+  {
+   "columns": 2,
+   "fieldname": "additional_amount_required",
+   "fieldtype": "Currency",
+   "in_list_view": 1,
+   "label": "Additional Amount Required (Provisional Approval time)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_h1",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_h2",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_h3",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_h4",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_h5",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "column_break_h6",
+   "fieldtype": "Column Break"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-09-28 10:00:00.000000",
+ "modified": "2026-10-19 22:43:34.663853",
  "modified_by": "Administrator",
  "module": "Case Management",
  "name": "Additional Support Request",

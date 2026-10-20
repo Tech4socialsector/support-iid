@@ -15,6 +15,7 @@ DASHBOARD_FIELDS = [
 	"district",
 	"state",
 	"beneficiary_name",
+	"mobile_number",
 	"source_of_request",
 	"approved_date",
 ]

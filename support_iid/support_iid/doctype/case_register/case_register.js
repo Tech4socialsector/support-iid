@@ -278,6 +278,10 @@ frappe.ui.form.on("Case Register", {
 		});
 	},
 
+	additional_amount_required(frm) {
+		case_register_update_additional_total(frm, true);
+	},
+
 	district(frm) {
 		if (!frm.doc.district || frm.doc.state) return;
 		frappe.db.get_value("District", frm.doc.district, "state").then(function (r) {
@@ -377,6 +381,7 @@ frappe.ui.form.on("Case Register", {
 
 	beneficiary_name(frm) {
 		case_register_validate_name(frm, "beneficiary_name");
+		case_register_load_beneficiary_history(frm);
 	},
 
 	requestor_name(frm) {
@@ -389,6 +394,7 @@ frappe.ui.form.on("Case Register", {
 
 	mobile_number(frm) {
 		case_register_validate_mobile(frm, "mobile_number");
+		case_register_load_beneficiary_history(frm);
 	},
 
 	primary_contact_mobile(frm) {
@@ -432,6 +438,7 @@ frappe.ui.form.on("Case Register", {
 		apply_full_details_submit_button(frm);
 		apply_full_details_highlight(frm);
 		apply_additional_support_button(frm);
+		case_register_load_beneficiary_history(frm);
 		apply_case_status_indicator(frm);
 		case_register_resync_stale_roles(frm);
 
@@ -606,6 +613,14 @@ function apply_full_details_visibility(frm) {
 	}
 
 	var lock_provisional = case_register_awaiting_full_details(frm);
+	// Additional amount can be entered only while full details are pending —
+	// locked once submitted for final approval and after Approved.
+	// ...and once an amount has been saved it stays as entered.
+	var additional_saved = flt(frm.doc.additional_amount_required) > 0 && !frm.is_dirty();
+	["additional_amount_required", "reason_for_additional_amount"].forEach(function (fieldname) {
+		frm.set_df_property(fieldname, "read_only", lock_provisional && !additional_saved ? 0 : 1);
+	});
+	case_register_update_additional_total(frm, false);
 	_CASE_REGISTER_PROVISIONAL_FIELDS.forEach(function (fieldname) {
 		frm.set_df_property(fieldname, "read_only", lock_provisional ? 1 : 0);
 	});
@@ -613,6 +628,18 @@ function apply_full_details_visibility(frm) {
 	_CASE_REGISTER_FULL_DETAIL_FIELDS.concat(_CASE_REGISTER_PROVISIONAL_FIELDS).forEach(function (fieldname) {
 		frm.refresh_field(fieldname);
 	});
+}
+
+if (!document.getElementById("case-register-additional-btn-style")) {
+	var additional_btn_style = document.createElement("style");
+	additional_btn_style.id = "case-register-additional-btn-style";
+	additional_btn_style.textContent =
+		".btn.cr-additional-support-btn { background:#e8f2fe !important; color:#1c6fc0 !important;" +
+		"  border:1px solid #b9d7fb !important; font-weight:600; }" +
+		".btn.cr-additional-support-btn:hover { background:#d6e8fd !important; }" +
+		"[data-theme='dark'] .btn.cr-additional-support-btn { background:rgba(36,144,239,.18) !important;" +
+		"  color:#60a5fa !important; border-color:rgba(36,144,239,.35) !important; }";
+	document.head.appendChild(additional_btn_style);
 }
 
 if (!document.getElementById("case-register-needs-input-style")) {
@@ -656,6 +683,25 @@ function apply_full_details_highlight(frm) {
 		frm.$wrapper.on("dirty", function () {
 			apply_full_details_highlight(frm);
 		});
+	}
+}
+
+// Total Funds Requested (the single total field): approved requests so far
+// (Funds Requested + approved Previous Requests) plus any Additional Amount
+// Required. Mirrors CaseRegister._set_total_funds_requested on the server.
+function case_register_update_additional_total(frm, mark_dirty) {
+	var additional = flt(frm.doc.additional_amount_required);
+	var approved = flt(frm.doc.funds_requested);
+	(frm.doc.additional_support_requests || []).forEach(function (r) {
+		if (r.status === "Approved") approved += flt(r.funds_requested);
+	});
+	var total = approved + additional;
+	if (flt(frm.doc.total_funds_requested) === total) return;
+	if (mark_dirty) {
+		frm.set_value("total_funds_requested", total);
+	} else {
+		frm.doc.total_funds_requested = total;
+		frm.refresh_field("total_funds_requested");
 	}
 }
 
@@ -710,21 +756,28 @@ function apply_additional_support_button(frm) {
 		(frm.doc.requestor_email || "").trim().toLowerCase() === user.toLowerCase();
 	if (!can_request) return;
 
-	frm.add_custom_button(__("Additional Support Request"), () => additional_support_dialog(frm));
+	var $btn = frm.add_custom_button(__("Additional Support Request"), () => additional_support_dialog(frm));
+	if ($btn) $btn.addClass("cr-additional-support-btn");
 }
 
 function case_register_past_records_html(frm) {
 	var d = frm.doc;
 	var esc = frappe.utils.escape_html;
-	var row = function (label, value) {
+	// Label above value, laid out in a two-column grid.
+	var cell = function (label, value, wide) {
 		return (
-			'<tr><td style="padding:5px 10px 5px 0;color:#5c6773;white-space:nowrap;vertical-align:top;">' +
-			esc(label) +
-			'</td><td style="padding:5px 0;color:#1a2229;">' +
-			(value ? esc(String(value)) : '<span style="color:#9aa4ad;">-</span>') +
-			"</td></tr>"
+			'<div style="' + (wide ? "grid-column:1/-1;" : "") + '">' +
+			'<div style="font-size:11px;color:#5c6773;margin-bottom:1px;">' + esc(label) + "</div>" +
+			'<div style="font-size:12.5px;color:#1a2229;font-weight:500;">' +
+			(value ? esc(String(value)) : '<span style="color:#9aa4ad;font-weight:400;">-</span>') +
+			"</div></div>"
 		);
 	};
+	var heading = function (text) {
+		return '<div style="font-weight:600;font-size:13px;margin:2px 0 6px;">' + text + "</div>";
+	};
+	var grid_open = '<div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px 16px;margin-bottom:10px;">';
+
 	// The main form holds the latest request; the first one is the history
 	// row marked "First request" (FIRST_REQUEST_PURPOSE in case_register.py).
 	var history = (d.additional_support_requests || []).slice().sort(function (a, b) {
@@ -735,19 +788,23 @@ function case_register_past_records_html(frm) {
 	});
 	if (first_idx === -1 && history.length) first_idx = 0;
 	var first = first_idx === -1 ? d : history[first_idx];
+
 	var html =
-		'<div style="font-weight:600;margin-bottom:6px;">' +
-		__("Past Provisional Record") +
-		"</div>" +
-		'<table style="width:100%;font-size:13px;margin-bottom:14px;">' +
-		row(__("Request Date (first request)"), first.request_date ? frappe.datetime.str_to_user(first.request_date) : "") +
-		row(__("Name"), d.beneficiary_name) +
-		row(__("Age"), d.age) +
-		row(__("Mobile Number"), d.mobile_number) +
-		row(__("Location"), d.location) +
-		row(__("Note about the individual"), d.note_about_the_individual) +
-		row(__("Fund Requested (first request)"), format_currency(first.funds_requested || 0)) +
-		"</table>";
+		heading(__("Past Provisional Record")) +
+		grid_open +
+		cell(__("Request Date (first request)"), first.request_date ? frappe.datetime.str_to_user(first.request_date) : "") +
+		cell(__("Name"), d.beneficiary_name) +
+		cell(__("Age"), d.age) +
+		cell(__("Mobile Number"), d.mobile_number) +
+		cell(__("Location"), d.location) +
+		cell(__("Fund Requested (first request)"), format_currency(first.funds_requested || 0)) +
+		cell(
+			__("Additional Amount Required (Provisional Approval time)"),
+			flt(d.additional_amount_required) ? format_currency(d.additional_amount_required) : ""
+		) +
+		cell(__("Total Funds Requested"), d.total_funds_requested ? format_currency(d.total_funds_requested) : "") +
+		cell(__("Note about the individual"), d.note_about_the_individual, true) +
+		"</div>";
 
 	var previous = history.filter(function (r, i) {
 		return i !== first_idx;
@@ -763,18 +820,30 @@ function case_register_past_records_html(frm) {
 		]);
 	}
 	if (previous.length) {
+		var th = function (align) {
+			return 'style="text-align:' + (align || "left") + ';padding:3px 6px;font-size:11px;color:#5c6773;border-bottom:1px solid #e3e8ec;"';
+		};
+		var td = function (align) {
+			return 'style="text-align:' + (align || "left") + ';padding:3px 6px;font-size:12px;border-bottom:1px solid #f0f2f5;"';
+		};
 		html +=
-			'<div style="font-weight:600;margin-bottom:6px;">' +
-			__("Previous Additional Requests") +
-			"</div>" +
-			'<table style="width:100%;font-size:13px;margin-bottom:6px;">';
+			heading(__("Previous Additional Requests")) +
+			'<table style="width:100%;border-collapse:collapse;margin-bottom:6px;"><thead><tr>' +
+			"<th " + th() + ">" + __("Request Date") + "</th>" +
+			"<th " + th() + ">" + __("Status") + "</th>" +
+			"<th " + th("right") + ">" + __("Fund Requested") + "</th>" +
+			"<th " + th() + ">" + __("Purpose") + "</th>" +
+			"</tr></thead><tbody>";
 		previous.forEach(function (r) {
-			html += row(
-				(r.request_date ? frappe.datetime.str_to_user(r.request_date) : "") + " — " + (r.status || ""),
-				format_currency(r.funds_requested || 0) + " · " + (r.purpose_of_additional_support || "")
-			);
+			html +=
+				"<tr>" +
+				"<td " + td() + ">" + (r.request_date ? frappe.datetime.str_to_user(r.request_date) : "") + "</td>" +
+				"<td " + td() + ">" + esc(r.status || "") + "</td>" +
+				"<td " + td("right") + ">" + format_currency(r.funds_requested || 0) + "</td>" +
+				"<td " + td() + ">" + esc(r.purpose_of_additional_support || "") + "</td>" +
+				"</tr>";
 		});
-		html += "</table>";
+		html += "</tbody></table>";
 	}
 	return html;
 }
@@ -793,18 +862,28 @@ function additional_support_dialog(frm) {
 				default: frappe.datetime.get_today(),
 				read_only: 1,
 			},
-			{
-				fieldname: "purpose",
-				fieldtype: "Small Text",
-				label: __("Purpose of Additional Support"),
-				reqd: 1,
-			},
+			{ fieldtype: "Column Break" },
 			{
 				fieldname: "funds_requested",
 				fieldtype: "Currency",
 				label: __("Fund Requested (Estimate)"),
 				reqd: 1,
 			},
+			{ fieldtype: "Column Break" },
+			{
+				fieldname: "document",
+				fieldtype: "Attach",
+				label: __("Document (If any)"),
+				options: { make_attachments_public: 0, allow_toggle_private: false },
+			},
+			{ fieldtype: "Section Break" },
+			{
+				fieldname: "purpose",
+				fieldtype: "Small Text",
+				label: __("Purpose of Additional Support"),
+				reqd: 1,
+			},
+			{ fieldtype: "Section Break" },
 			// Prefilled from the previous request; editable if anything changed.
 			{
 				fieldname: "hospital_institution_name",
@@ -813,6 +892,15 @@ function additional_support_dialog(frm) {
 				default: frm.doc.hospital_institution_name,
 				reqd: 1,
 			},
+			{
+				fieldname: "treatment",
+				fieldtype: "Data",
+				label: frm.fields_dict.treatment.df.label,
+				default: frm.doc.treatment,
+				hidden: frm.doc.type_of_request === "Education" ? 1 : 0,
+				reqd: frm.doc.type_of_request === "Medical" ? 1 : 0,
+			},
+			{ fieldtype: "Column Break" },
 			{
 				fieldname: "hospital_institution_location",
 				fieldtype: "Data",
@@ -826,20 +914,6 @@ function additional_support_dialog(frm) {
 				label: frm.fields_dict.ailment__course_details.df.label,
 				default: frm.doc.ailment__course_details,
 				reqd: 1,
-			},
-			{
-				fieldname: "treatment",
-				fieldtype: "Data",
-				label: frm.fields_dict.treatment.df.label,
-				default: frm.doc.treatment,
-				hidden: frm.doc.type_of_request === "Education" ? 1 : 0,
-				reqd: frm.doc.type_of_request === "Medical" ? 1 : 0,
-			},
-			{
-				fieldname: "document",
-				fieldtype: "Attach",
-				label: __("Document (If any)"),
-				options: { make_attachments_public: 0, allow_toggle_private: false },
 			},
 		],
 		primary_action_label: __("Submit Request"),
@@ -870,6 +944,8 @@ function additional_support_dialog(frm) {
 		},
 	});
 	dialog.show();
+	// Keep the popup compact: two-line text boxes instead of the tall default.
+	dialog.$wrapper.find("textarea").css({ height: "60px", "min-height": "60px" });
 }
 
 // Mirrors applyInsuranceVisibility() in support_iid_case_registration.js.
@@ -1756,4 +1832,164 @@ function load_documents_for(frm, request_type) {
 			force_private_attachments(frm);
 		},
 	});
+}
+
+
+// ── Returning beneficiary ───────────────────────────────────────────────────
+// Same mobile + same name = same person (counted); same mobile, other name =
+// e.g. a family member (listed, not counted); other mobile, same name + age =
+// possible match. Warn only — a new case can still be registered.
+var case_register_load_beneficiary_history = frappe.utils.debounce(function (frm) {
+	var field = frm.get_field("beneficiary_history_html");
+	var mobile = String(frm.doc.mobile_number || "").replace(/\D/g, "");
+	if (mobile.length < 10 && !frm.doc.beneficiary_name) {
+		if (field) field.$wrapper.empty();
+		frm.toggle_display("beneficiary_history_section", false);
+		return;
+	}
+	frappe.call({
+		method: "support_iid.support_iid.doctype.case_register.case_register.get_beneficiary_history",
+		args: {
+			mobile_number: frm.doc.mobile_number,
+			beneficiary_name: frm.doc.beneficiary_name,
+			age: frm.doc.age,
+			exclude: frm.is_new() ? null : frm.doc.name,
+		},
+		callback: function (r) {
+			case_register_render_beneficiary_history(frm, r.message || {});
+		},
+	});
+}, 600);
+
+function case_register_render_beneficiary_history(frm, h) {
+	var field = frm.get_field("beneficiary_history_html");
+	if (!field) return;
+	var esc = frappe.utils.escape_html;
+	var same = h.same_person || [];
+	var others = h.same_mobile_others || [];
+	var possible = h.possible_matches || [];
+
+	var link = function (c) {
+		return c.can_open
+			? '<a href="' + frappe.utils.get_form_link("Case Register", c.name) + '" target="_blank" style="font-weight:600;">' + esc(c.name) + "</a>"
+			: esc(c.name);
+	};
+	var pill = function (status) {
+		var s = status || "";
+		var color =
+			/approved/i.test(s) ? ["#e6f4ea", "#1e7e34"]
+			: /closed/i.test(s) ? ["#eef0f2", "#4b5560"]
+			: /declin|reject|withdraw/i.test(s) ? ["#fdecea", "#c0292f"]
+			: ["#fff4e0", "#b45309"];
+		return (
+			'<span style="display:inline-block;padding:1px 9px;border-radius:999px;font-size:11.5px;font-weight:600;' +
+			"background:" + color[0] + ";color:" + color[1] + ';white-space:nowrap;">' + esc(s) + "</span>"
+		);
+	};
+	var dash = '<span style="color:#9aa4ad">-</span>';
+	var table = function (headers, rows) {
+		var th = function (label, right) {
+			return (
+				'<th style="text-align:' + (right ? "right" : "left") + ';padding:6px 10px;font-size:11.5px;font-weight:600;' +
+				'color:#5c6773;background:#f4f5f7;white-space:nowrap;">' + __(label) + "</th>"
+			);
+		};
+		var td = function (value, right) {
+			return (
+				'<td style="text-align:' + (right ? "right" : "left") + ';padding:6px 10px;font-size:12.5px;' +
+				'border-top:1px solid #eceef0;vertical-align:top;">' + (value || dash) + "</td>"
+			);
+		};
+		return (
+			'<div style="overflow-x:auto;border:1px solid #e3e8ec;border-radius:8px;background:#fff;">' +
+			'<table style="width:100%;border-collapse:collapse;"><thead><tr>' +
+			headers.map(function (hd) { return th(hd[0], hd[1]); }).join("") +
+			"</tr></thead><tbody>" +
+			rows.map(function (r) {
+				return "<tr>" + r.map(function (v, i) { return td(v, headers[i][1]); }).join("") + "</tr>";
+			}).join("") +
+			"</tbody></table></div>"
+		);
+	};
+	// One-line summary that expands into a small table.
+	var collapsible = function (summary, rows) {
+		return (
+			'<details style="margin-top:10px;font-size:12.5px;">' +
+			'<summary style="cursor:pointer;color:#4b5560;">' + summary +
+			' <span style="color:#1c6fc0;">— ' + __("Show") + "</span></summary>" +
+			'<div style="margin-top:6px;">' +
+			table([["Beneficiary"], ["Case ID"], ["Request Date"], ["Status"]], rows.map(function (c) {
+				return [
+					esc(c.beneficiary_name || ""),
+					link(c),
+					c.request_date ? frappe.datetime.str_to_user(c.request_date) : "",
+					pill(c.case_status),
+				];
+			})) +
+			"</div></details>"
+		);
+	};
+
+	var html = "";
+	if (same.length) {
+		html +=
+			'<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">' +
+			'<span style="font-weight:600;color:#b45309;">' + __("Requested before") + "</span>" +
+			'<span style="background:#b45309;color:#fff;border-radius:999px;padding:0 9px;font-size:12px;font-weight:600;">' +
+			same.length + " " + (same.length === 1 ? __("case") : __("cases")) + "</span></div>" +
+			table(
+				[["Case ID"], ["Request Date"], ["Type"], ["Ailment / Course"], ["Treatment"], ["Hospital / Institution"], ["Total Funds", true], ["Status"]],
+				same.map(function (c) {
+					return [
+						link(c),
+						c.request_date ? frappe.datetime.str_to_user(c.request_date) : "",
+						esc(c.type_of_request || ""),
+						esc(c.ailment__course_details || ""),
+						esc(c.treatment || ""),
+						esc(c.hospital_institution_name || ""),
+						c.total_funds_requested || c.funds_requested ? format_currency(c.total_funds_requested || c.funds_requested) : "",
+						pill(c.case_status),
+					];
+				})
+			);
+	}
+	if (others.length) {
+		html += collapsible(
+			"👪 " + __("{0} other beneficiar{1} use this mobile number", [others.length, others.length === 1 ? "y" : "ies"]),
+			others
+		);
+	}
+	if (possible.length) {
+		html += collapsible(
+			"⚠️ " + __("{0} possible earlier case(s) with a different mobile number (same name and age)", [possible.length]),
+			possible
+		);
+	}
+	field.$wrapper.html(
+		html
+			? '<div style="border:1px solid #f5d39a;background:#fffaf0;border-radius:10px;padding:12px 14px;">' + html + "</div>"
+			: ""
+	);
+	// Last section of the form — shown only when there is history.
+	frm.toggle_display("beneficiary_history_section", !!html);
+
+	// While registering, also flag it at the top of the form.
+	if (frm.is_new() || frm.doc.case_status === "Draft") {
+		if (same.length) {
+			frm.dashboard.set_headline_alert(
+				"⚠️ " +
+					__("This beneficiary is already registered — {0} earlier request(s): {1}", [
+						same.length,
+						same
+							.map(function (c) {
+								return esc(c.name) + " (" + esc(c.case_status || "") + ")";
+							})
+							.join(", "),
+					]),
+				"orange"
+			);
+		} else {
+			frm.dashboard.clear_headline();
+		}
+	}
 }
